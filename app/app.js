@@ -1203,7 +1203,7 @@ async function keysBox() {
   }
   box.append(
     el("h2", { class: "group-h", text: "Keys" }),
-    el("p", { class: "sub", text: "Some apps need an API key, like OpenAI or Hugging Face. Keys are encrypted on this PC, given to an app as a setting when it runs, and never sent to Obstat. Sandbox tests aren't given them." }),
+    el("p", { class: "sub", text: "Some apps need an API key, like OpenAI or Hugging Face. Keys are encrypted on this PC and only given to the apps you pick, when they run. Sandbox tests aren't given them. Nobody at Obstat can see your keys: apps send them straight from this PC to the AI service, and that's true of keys you type into an app's own settings too." }),
     keys.length ? el("dl", { class: "rows" }, ...keys.map((k) => el("div", {},
       el("dt", {}, k.name, el("small", { text: `…${k.hint} · ${k.apps.includes("*") ? "all my apps" : k.apps.map(nameOf).join(", ")}` })),
       el("dd", {}, el("button", { class: "link danger", text: "Delete", onclick: async () => { if (confirm(`Delete ${k.name}?`)) { await ask("removeKey", k.id); render() } } }))))) : el("p", { class: "muted", text: "No keys yet." }),
