@@ -1,7 +1,7 @@
 {
   "about": "The apps the Windows test installs and starts through Obstat's own code (lib/apps.js and lib/worker.js), then opens in Obstat's viewer. Their commits and scripts come from picks.json (see sync-picks.mjs). Apps left out are listed under notTested with the reason.",
   "apps": [
-    { "id": "divinadevosai/plazai", "minutes": 20 },
+    { "id": "divinadevosai/plazai", "minutes": 20, "leftover": true },
     { "id": "SillyTavern/SillyTavern", "minutes": 20 },
     { "id": "openclaw/openclaw", "minutes": 25 },
     { "id": "HKUDS/nanobot", "minutes": 30 },

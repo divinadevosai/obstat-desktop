@@ -163,6 +163,28 @@ async function main() {
   while (Date.now() < until && (apps.get(id)?.running || (await listening(url)))) await wait(500)
   if (await listening(url)) fail(`something still answers at ${url} after Stop`)
   else say("stopped, and nothing answers at its address any more")
+
+  // A copy of the app an older Obstat left running holds the port: Obstat ends it and starts again
+  if (spec.leftover && process.platform === "win32") {
+    const port = Number(new URL(url).port)
+    const holder = path.join(dir, "obstat-e2e-holder.cjs")
+    fs.writeFileSync(holder, `require("node:http").createServer((q, r) => r.end("old copy")).listen(${port}, "127.0.0.1")\n`)
+    // its command line names a file in the app's folder, as a real leftover's does
+    const holderLog = fs.openSync(path.join(OUT, "holder.log"), "w")
+    const old = require("node:child_process").spawn(process.execPath, [holder], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, detached: true, stdio: ["ignore", holderLog, holderLog], windowsHide: true })
+    old.on("error", (e) => say(`stand-in old copy: ${e.message}`))
+    old.on("exit", (code) => say(`stand-in old copy exited (${code}): ${fs.readFileSync(path.join(OUT, "holder.log"), "utf8").slice(-500)}`))
+    old.unref()
+    for (let i = 0; i < 30 && !(await listening(url)); i++) await wait(500)
+    if (!(await listening(url))) { fail(`the stand-in old copy didn't start on port ${port}`); return page }
+    const again = await runPlanned(script)
+    if (!again.running) fail("the app didn't start again while an old copy held its port")
+    else if (!events.some((e) => e.type === "log" && /A copy of this app from before was still using port/.test(e.text))) fail("Obstat didn't say it ended the old copy")
+    else say("an old copy holding the port was ended and the app started again")
+    apps.stop(id)
+    const end = Date.now() + 20000
+    while (Date.now() < end && (apps.get(id)?.running || (await listening(url)))) await wait(500)
+  }
   return page
 }
 
