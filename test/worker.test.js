@@ -200,15 +200,66 @@ test("an approved run won't start a script the plan didn't read", async () => {
   assert.match(r.error, /wasn't in the steps you approved/)
 })
 
-test("a placeholder address isn't taken for the app's address, and the app's \"open the browser\" opens it in Obstat", { skip: !posix }, async () => {
-  const { dir } = app({
-    "start.js": `module.exports = { run: [
-      { method: "shell.run", params: { message: ["echo 'Visit http://ip:port for Web UI'", "python3 -c \\"import webbrowser; webbrowser.open('http://127.0.0.1:7860/')\\"", "echo 'Running on http://127.0.0.1:7860'"], on: [{ event: "/http:\\\\/\\\\/\\\\S+/", done: true }] } },
-      { method: "local.set", params: { url: "{{input.event[0]}}" } },
-    ] }`,
+// A tiny server for start scripts: prints its line, then listens (or listens, then prints).
+const SERVE = `const [port, raw, first] = process.argv.slice(2)
+const line = raw.replace(/\\\\x1b/g, "\\x1b")
+const s = require("http").createServer((q, r) => r.end("hi"))
+if (first === "print") { console.log(line); setTimeout(() => s.listen(Number(port), "127.0.0.1"), 300) }
+else s.listen(Number(port), "127.0.0.1", () => console.log(line))
+`
+const freePort = () => new Promise((resolve) => { const s = require("node:net").createServer().listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => resolve(port)) }) })
+// runs a daemon start script until it's ready, then stops it
+function start(dir, script = "start.js") {
+  return new Promise((resolve) => {
+    const child = fork(WORKER, [], { stdio: ["ignore", "ignore", "ignore", "ipc"] })
+    const out = { log: "", local: {}, opened: [], end: null }
+    const timer = setTimeout(() => { child.kill(); resolve({ ...out, end: "timeout" }) }, 20000)
+    child.on("message", (m) => {
+      if (m.type === "log") out.log += m.text
+      else if (m.type === "open") out.opened.push(m.url)
+      else if (m.type === "local") out.local[m.key] = m.value
+      else if (m.type === "ready" || m.type === "done" || m.type === "error") { out.end = m.type; out.error = m.message; child.send({ type: "stop" }) }
+    })
+    child.on("exit", () => { clearTimeout(timer); resolve(out) })
+    child.send({ type: "run", job: { appDir: dir, script, env: {}, paths: [], python: "python3", ctx: { platform: process.platform, gpu: "none", args: {}, input: {}, port: 42020, env: {} }, approved: null } })
   })
-  const out = await run(dir, "start.js")
-  assert.equal(out.end, "done", out.log)
-  assert.equal(out.local.url, "http://127.0.0.1:7860/")
-  assert.deepEqual(out.opened, ["http://127.0.0.1:7860/"])
+}
+const daemon = (message, event = "/http:\\/\\/\\S+/") => `module.exports = { daemon: true, run: [
+  { method: "shell.run", params: { message: ${JSON.stringify(message)}, on: [{ event: ${JSON.stringify(event)}, done: true }] } },
+  { method: "local.set", params: { url: "{{input.event[0]}}" } },
+] }`
+
+test("the app's address is the one it answers at: placeholders and example addresses are passed over, and \"open the browser\" opens it in Obstat", { skip: !posix }, async () => {
+  const [port, other] = [await freePort(), await freePort()]
+  const { dir } = app({ "serve.js": SERVE, "start.js": daemon([
+    `echo 'Visit http://ip:port for Web UI, e.g., http://127.0.0.1:${other}'`,
+    `python3 -c "import webbrowser; webbrowser.open('http://127.0.0.1:${port}/')"`,
+    `node serve.js ${port} 'Running on local URL:  http://127.0.0.1:${port}.' print`,
+  ]) })
+  const out = await start(dir)
+  assert.equal(out.end, "ready", out.log)
+  assert.equal(out.local.url, `http://127.0.0.1:${port}`)
+  assert.deepEqual(out.opened, [`http://127.0.0.1:${port}/`])
+})
+
+test("a coloured address (Vite on Windows) is found, and one on another computer isn't taken", { skip: !posix }, async () => {
+  const port = await freePort()
+  const { dir } = app({ "serve.js": SERVE, "start.js": daemon([
+    "echo 'Docs: http://example.com:8080/guide'",
+    `node serve.js ${port} '  \\x1b[32m➜\\x1b[39m  Local:   \\x1b[36mhttp://localhost:\\x1b[1m${port}\\x1b[22m/\\x1b[39m'`,
+  ]) })
+  const out = await start(dir)
+  assert.equal(out.end, "ready", out.log)
+  assert.equal(out.local.url, `http://localhost:${port}/`)
+})
+
+test("Obstat's own settings reach every command, and a step's own env wins", { skip: !posix }, async () => {
+  const { dir } = app({ "install.js": steps([
+    { method: "shell.run", params: { message: ["echo \"B=$BROWSER G=$GRADIO_SERVER_NAME S=$STREAMLIT_SERVER_HEADLESS\""] } },
+    { method: "shell.run", params: { env: { GRADIO_SERVER_NAME: "0.0.0.0" }, message: ["echo \"G2=$GRADIO_SERVER_NAME\""] } },
+  ]) })
+  const r = await run(dir, "install.js")
+  assert.equal(r.end, "done", r.error)
+  assert.match(r.log, /B=echo \[obstat-open\] %s G=127\.0\.0\.1 S=true/)
+  assert.match(r.log, /G2=0\.0\.0\.0/)
 })

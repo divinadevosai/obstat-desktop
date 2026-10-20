@@ -72,6 +72,8 @@ const START = "app://obstat/index.html"
 
 // The window's files are served from app://obstat/, so /fonts/… paths work like on the site.
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true } }])
+// apps that draw with WebGL still show on PCs whose graphics driver Chromium won't use
+viewerLib.useSoftwareWebGL(app)
 
 if (!app.requestSingleInstanceLock()) app.quit()
 

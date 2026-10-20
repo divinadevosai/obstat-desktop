@@ -38,6 +38,9 @@ test("install, start, stop and remove an app", { skip: !hasPython || process.pla
   await a.fetchApp({ id, owner: "someone", name: "demo", url: repo.dir, sha: repo.sha, reviewed: true }, () => {})
   const preview = await a.preview(id, "install.js")
   assert.equal(preview.commands.length, 2)
+  // what Obstat sets for every command is shown with the steps
+  assert.ok(preview.env.some((e) => e.startsWith("BROWSER=") && e.includes("[obstat-open]")))
+  assert.ok(preview.env.includes("GRADIO_SERVER_NAME=127.0.0.1"))
 
   const installed = await a.run(id, "install.js")
   assert.deepEqual(installed, { ok: true })

@@ -1,0 +1,46 @@
+{
+  "about": "The apps the Windows test installs and starts through Obstat's own code (lib/apps.js and lib/worker.js), then opens in Obstat's viewer. Their commits and scripts come from picks.json (see sync-picks.mjs). Apps left out are listed under notTested with the reason.",
+  "apps": [
+    { "id": "divinadevosai/plazai", "minutes": 20 },
+    { "id": "SillyTavern/SillyTavern", "minutes": 20 },
+    { "id": "openclaw/openclaw", "minutes": 25 },
+    { "id": "HKUDS/nanobot", "minutes": 30 },
+    { "id": "NousResearch/hermes-agent", "minutes": 35 },
+    { "id": "open-webui/open-webui", "minutes": 50 },
+    { "id": "pinokiofactory/bolt", "minutes": 45 },
+    { "id": "pinokiofactory/llamafactory", "minutes": 45 },
+    { "id": "pinokiofactory/kokoro-tts", "minutes": 45 },
+    { "id": "pinokiofactory/whisper-webui", "minutes": 45 },
+    { "id": "pinokiofactory/RMBG-2-Studio", "minutes": 45 },
+    { "id": "pinokiofactory/e2-f5-tts", "minutes": 50 },
+    { "id": "pinokiofactory/invoke", "minutes": 50 },
+    { "id": "pinokiofactory/applio", "minutes": 55 }
+  ],
+  "buildui": [
+    {
+      "id": "lincolnloop/python-qrcode",
+      "sha": "f92c007498d796e4825638b7d50c14ea51e5457a",
+      "about": "A command-line app with no screen: the qr command. Installed with the install step Obstat writes for Python repos, then given a screen with Build a UI.",
+      "install": "uv pip install -e .",
+      "form": { "input": "Obstat", "--factory": "svg", "--output": "obstat-e2e.svg" },
+      "makes": "obstat-e2e.svg",
+      "minutes": 15
+    }
+  ],
+  "notTested": {
+    "divinadevosai/socialcleanup": "a browser extension: its start step opens Edge's extensions page on purpose, there is no page to show in Obstat",
+    "pinokiofactory/z-image-turbo": "needs an NVIDIA graphics card (20 GB model)",
+    "pinokiofactory/dia": "needs an NVIDIA graphics card",
+    "pinokiofactory/ace-step": "needs an NVIDIA graphics card",
+    "pinokiofactory/flux-webui": "needs an NVIDIA graphics card with 12 GB or more",
+    "pinokiofactory/OmniGen": "needs an NVIDIA graphics card",
+    "pinokiofactory/cogvideo": "needs an NVIDIA graphics card with 12 GB or more",
+    "pinokiofactory/diffusers-image-fill": "needs an NVIDIA graphics card",
+    "pinokiofactory/clarity-refiners-ui": "loads several GB of image models when it starts; too heavy for a free runner",
+    "pinokiofactory/pyramidflow": "needs an NVIDIA graphics card",
+    "pinokiofactory/Allegro-txt2vid-install": "needs an NVIDIA graphics card with 12 GB or more",
+    "pinokiofactory/audiocraft_plus": "needs an NVIDIA graphics card (imports xformers, which only the NVIDIA install has)",
+    "pinokiofactory/MMAudio": "loads several GB of models when it starts; very slow without an NVIDIA graphics card",
+    "pinokiofactory/cogstudio": "needs an NVIDIA graphics card"
+  }
+}

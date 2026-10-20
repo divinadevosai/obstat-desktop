@@ -4,3 +4,5 @@ dist/
 app/obstat.css
 app/obstat.svg
 app/fonts/
+# the Windows app test (e2e/run.js) writes its logs and screenshots here
+e2e-out/
