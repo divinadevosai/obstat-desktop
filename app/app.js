@@ -31,6 +31,42 @@ const appHash = (e) => `#/app/${encodeURIComponent(e.owner)}/${encodeURIComponen
 const runHash = (id) => `#/run/${encodeURIComponent(id)}`
 const stars = (n) => `★ ${(n || 0).toLocaleString("en-GB")}`
 const day = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+// "3 days ago", "2 months ago"
+function since(iso) {
+  const d = (Date.now() - new Date(iso).getTime()) / 86400000
+  if (!Number.isFinite(d)) return ""
+  const n = (x, w) => `${x} ${w}${x === 1 ? "" : "s"} ago`
+  return d < 1 ? "today" : d < 2 ? "yesterday" : d < 31 ? n(Math.floor(d), "day") : d < 365 ? n(Math.floor(d / 30.4), "month") : n(Math.floor(d / 365), "year")
+}
+
+// An app's newest commits, newest first: its updates and fixes in the repo's own words.
+function changesList(c) {
+  const box = el("div", { class: "changes" }, el("h2", { text: "What's changed" }))
+  if (!c.sections.length) {
+    box.appendChild(el("p", { class: "note", text: "No changes to show yet." }))
+    return box
+  }
+  if (c.newer) box.appendChild(el("p", { class: "ok-note", text: `${c.newer >= 30 ? "30 or more" : c.newer} newer change${c.newer === 1 ? "" : "s"} since your version. ${c.reviewed && c.reviewed !== c.current ? "Update installs the newest reviewed one." : c.reviewed ? "They haven't been reviewed yet, so your version stays." : "Update gets them."}` }))
+  for (const [i, s] of c.sections.entries()) {
+    if (c.sections.length > 1) box.appendChild(el("h3", { text: s.title }))
+    const at = c.current ? s.commits.findIndex((x) => x.sha === c.current) : -1
+    const row = (x, j) => el("li", { class: x.sha === c.current ? "mine" : i === 0 && j < at ? "new" : "" },
+      el("b", { text: x.message || "(no message)" }),
+      el("small", {},
+        [x.author, since(x.at)].filter(Boolean).join(" · "),
+        x.sha === c.current && el("span", { class: "badge ok", text: "Your version" }),
+        x.sha === c.reviewed && el("span", { class: "badge ok", text: "Reviewed" }),
+        s.link ? el("button", { class: "sha", text: x.sha.slice(0, 7), title: "See it on GitHub", onclick: () => window.obstat.openExternal(`${s.link}/commit/${x.sha}`) }) : el("code", { text: x.sha.slice(0, 7) })))
+    const list = el("ol", { class: "timeline" }, ...s.commits.slice(0, Math.max(6, at + 1)).map(row))
+    box.appendChild(list)
+    if (s.commits.length > Math.max(6, at + 1)) {
+      const shown = Math.max(6, at + 1)
+      const more = el("button", { class: "btn small ghost", text: `Show ${s.commits.length - shown} more`, onclick: () => { list.append(...s.commits.slice(shown).map((x, j) => row(x, j + shown))); more.remove() } })
+      box.appendChild(more)
+    }
+  }
+  return box
+}
 // The app's own logo when it has one (from its folder or its GitHub repo), else its first letter
 const icons = new Map()
 function mark(name, app) {
@@ -402,6 +438,9 @@ const views = {
       try { go(appHash(await ask("copy", id))) } catch (err) { fail(err) }
     }
 
+    const changes = el("div", { class: "changes" }, el("h2", { text: "What's changed" }), el("p", { class: "note", text: "Getting its latest updates…" }))
+    ask("changes", id).then((c) => changes.replaceWith(changesList(c))).catch((err) => changes.replaceChildren(el("h2", { text: "What's changed" }), el("p", { class: "note", text: err.message })))
+
     const menu = el("div", { class: "actions-menu" },
       ...(test ? [
         head("Sandbox test"),
@@ -465,7 +504,8 @@ const views = {
           note,
           el("div", { class: "term" },
             el("div", { class: "term-h" }, el("i"), el("i"), el("i"), el("span", { text: "log" })),
-            logBody))),
+            logBody),
+          changes)),
     ]
   },
 

@@ -92,6 +92,21 @@ svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-l
 .about{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
 .about p{margin:0 0 8px}
 .about .note{font-size:14px;color:var(--dim);margin:0}
+.changes{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.changes h2{font-size:16px;margin:0 0 12px}
+.changes h3{font-size:13px;font-weight:500;color:var(--dim);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em}
+.changes .note{font-size:14px;color:var(--dim);margin:0}
+.timeline{list-style:none;margin:0 0 8px;padding:0 0 0 18px;border-left:2px solid var(--line)}
+.timeline li{position:relative;padding:0 0 12px}
+.timeline li::before{content:"";position:absolute;left:-24px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--panel);border:2px solid var(--line)}
+.timeline li.mine::before{background:var(--acc);border-color:var(--acc)}
+.timeline li.new::before{border-color:var(--indigo)}
+.changes .ok-note{margin:0 0 12px;font-size:14px}
+.timeline b{display:block;font-weight:500;overflow-wrap:anywhere}
+.timeline small{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:var(--dim);font-size:12px;margin-top:2px}
+.timeline .badge{font-size:11px;margin:0}
+.timeline .sha{font:12px var(--mono);color:var(--dim);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline dotted}
+.timeline .sha:hover{color:var(--bone)}
 .term{background:#07060c;border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .term-h{display:flex;gap:6px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);font:12px var(--mono);color:var(--dim)}
 .term-h i{width:9px;height:9px;border-radius:50%;background:var(--line)}
