@@ -26,6 +26,20 @@ async function ask(what, ...args) {
   return data
 }
 
+// Answers that come over the internet (or start a process) and rarely change are
+// kept for a short while, so moving between pages doesn't wait on them each time.
+const KEEP = { channels: 600000, news: 60000, account: 30000, tools: 60000, sandboxInfo: 600000 }
+const kept = new Map()
+function askKept(what) {
+  const k = kept.get(what)
+  if (k && Date.now() - k.at < KEEP[what]) return k.p
+  const p = ask(what)
+  kept.set(what, { at: Date.now(), p })
+  p.catch(() => kept.delete(what))
+  return p
+}
+const forget = (what) => kept.delete(what)
+
 const go = (hash) => { location.hash = hash }
 const appHash = (e) => `#/app/${encodeURIComponent(e.owner)}/${encodeURIComponent(e.name)}`
 const runHash = (id) => `#/run/${encodeURIComponent(id)}`
@@ -103,6 +117,8 @@ function icon(name) {
   svg.append(p)
   return svg
 }
+// What a running app is doing, in words: "Busy" alone left people guessing
+const busyLabel = (r) => r.url ? "Running" : { "install.js": "Installing", "reset.js": "Resetting", "update.js": "Updating" }[r.script] || "Starting"
 const STATUS = { ready: "Downloaded", busy: "Installing", installed: "Installed", running: "Running", opening: "Opening Windows Sandbox", installing: "Installing", starting: "Starting", finished: "Finished", failed: "Failed" }
 
 async function loadList() {
@@ -157,7 +173,7 @@ const views = {
         const r = row({ ...a, reviewedAt: null })
         const meta = r.querySelector(".meta")
         meta.replaceChildren(
-          a.running ? el("span", { class: "badge ok", text: a.running.url ? "Running" : "Busy" }) : el("span", { class: "badge", text: a.installed ? "Installed" : "Not installed yet" }),
+          a.running ? el("span", { class: "badge ok", text: busyLabel(a.running) }) : el("span", { class: "badge", text: a.installed ? "Installed" : "Not installed yet" }),
           a.local ? el("span", { class: "badge", text: a.copiedFrom ? "Your copy" : "Made by you" }) : a.reviewed ? el("span", { class: "badge ok", text: "Reviewed" }) : el("span", { class: "badge warn", text: "Not reviewed" }))
         return r
       })))
@@ -215,9 +231,14 @@ const views = {
   app: async (owner, name) => {
     const id = `${owner}/${name}`.toLowerCase()
     let reviewed = repos.find((r) => r.id === id), check = pasted.get(id)
-    const local = await ask("app", id)
-    const test = local?.installed ? null : (await ask("sandboxes").catch(() => [])).find((t) => t.id === id) || null
-    const box = await ask("sandboxInfo").catch(() => ({ mode: "folder" }))
+    // everything the page needs, asked for at once rather than one after another
+    const [local, boxes, box, allTools] = await Promise.all([
+      ask("app", id),
+      ask("sandboxes").catch(() => []),
+      askKept("sandboxInfo").catch(() => ({ mode: "folder" })),
+      askKept("tools").catch(() => []),
+    ])
+    const test = local?.installed ? null : boxes.find((t) => t.id === id) || null
     if (!reviewed && !check && !local && !test) {
       view.replaceChildren(el("p", { class: "muted", text: "Looking it up on GitHub…" }))
       try { check = await ask("check", `github.com/${owner}/${name}`); pasted.set(id, check) } catch (e) { return page("Couldn't open that app", e.message) }
@@ -228,7 +249,7 @@ const views = {
       : !check ? ""
       : check.ready ? "It has Pinokio install scripts, so Obstat can run them as they are."
       : `It looks like ${{ python: "a Python project", node: "a Node.js project" }[check.stack] || "a project we couldn't identify"} with no install scripts. Obstat writes the install steps and shows them before anything runs.`
-    const tools = (await ask("tools").catch(() => [])).filter((t) => t.found && t.kind !== "Tool")
+    const tools = allTools.filter((t) => t.found && t.kind !== "Tool")
     const runs = local?.installed ? await ask("runs", id).catch(() => []) : []
     const mine = !!local?.local
 
@@ -452,6 +473,9 @@ const views = {
         head("Get it"),
         isReviewed ? act("Install", install, "primary", "install") : act("Test in sandbox", testIt, "primary", "shield", "Safe first try"),
         !isReviewed && act("Install without testing", install, "", "install"),
+      ] : r && !local.installed ? [
+        head(r.script === "install.js" ? "Installing" : "Running"),
+        act("Stop", async () => { await ask("stop", id); setTimeout(render, 1200) }, "primary", "stop", "You can install it again after"),
       ] : !local.installed ? [
         head("Get it"),
         mine && !hasInstall ? act("Check again", render, "primary", "update", "Waiting for the agent's install.js") : act("Install", install, "primary", "install"),
@@ -491,7 +515,7 @@ const views = {
             mine ? el("span", { class: "badge", text: local.copiedFrom ? `Your copy of ${local.copiedFrom}` : "Made by you" })
               : isReviewed ? el("span", { class: "badge ok", text: reviewed ? `${reviewed.testedAt ? "Reviewed and tested" : "Reviewed"} ${day(reviewed.reviewedAt)}` : "Reviewed" }) : el("span", { class: "badge warn", text: "Not reviewed" }),
             local?.edited && el("span", { class: "badge warn", text: "Scripts edited" }),
-            local?.installed && el("span", { class: "badge", text: r ? (r.url ? "Running" : "Busy") : "Installed" }),
+            local?.installed && el("span", { class: "badge", text: r ? busyLabel(r) : "Installed" }),
             test && el("span", { class: "badge sandbox", text: `In the sandbox: ${STATUS[test.status] || test.status}` }),
             e.stars != null && el("span", { text: stars(e.stars) }),
             e.language && el("span", { text: e.language }),
@@ -510,7 +534,7 @@ const views = {
   },
 
   sandbox: async () => {
-    const [box, tests] = await Promise.all([ask("sandboxInfo"), ask("sandboxes")])
+    const [box, tests] = await Promise.all([askKept("sandboxInfo"), ask("sandboxes")])
     const modeNote = box.mode === "windows"
       ? el("p", { class: "note ok-note", text: "This PC has Windows Sandbox, so tests run in a throwaway copy of Windows that can't see your files and is wiped when you delete the test. It has no NVIDIA GPU inside, so GPU apps test with their CPU version." })
       : box.platform === "win32"
@@ -596,7 +620,7 @@ const views = {
   },
 
   plugins: async () => {
-    const tools = await ask("tools")
+    const tools = await askKept("tools")
     const group = (kind, title) => {
       const list = tools.filter((t) => t.kind === kind)
       return [el("p", { class: "group-h", text: `${title} · ${list.length}` }),
@@ -696,17 +720,22 @@ const views = {
     rows([["Installed version", info.version || "…"], ["Updates", "Automatic updates arrive with the first public release"]])),
 
   chat: async (channel = "general") => {
-    const channels = await ask("channels")
+    const channels = await askKept("channels")
     if (!Object.hasOwn(channels, channel)) channel = "general"
-    let acct = await ask("account")
+    let acct = await askKept("account")
     const tabs = communityTabs(channels, channel)
     const log = el("div", { class: "chat-log", "aria-live": "polite" })
     const status = el("p", { class: "chat-status" })
     let last = null
-    const show = (msgs) => {
+    const seen = new Set()
+    // `own`: a message just sent from here, shown before the next read reaches it
+    // (it doesn't move `last`, so messages others sent just before it still arrive)
+    const show = (msgs, own = false) => {
       if (!msgs.length) return
       const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 40
       for (const m of msgs) {
+        if (seen.has(m.id)) continue
+        seen.add(m.id)
         const report = el("button", { class: "link small", text: "Report", onclick: async (e) => {
           try { await ask("reportChat", channel, m.id); e.target.textContent = "Reported" } catch (x) { e.target.textContent = x.message }
         } })
@@ -725,12 +754,15 @@ const views = {
           el("p", { text: m.text }))
         log.append(row)
       }
-      last = msgs[msgs.length - 1].id
+      if (!own) last = msgs[msgs.length - 1].id
       if (stick || msgs.length > 20) log.scrollTop = log.scrollHeight
     }
-    const refresh = async () => {
+    // one read at a time, so two overlapping reads can't both add the same messages
+    let reading = null
+    const refresh = () => reading || (reading = (async () => {
       try { show(await ask("readChat", channel, last)); status.textContent = "" } catch (x) { status.textContent = x.message }
-    }
+      finally { reading = null }
+    })())
     await refresh()
     if (!log.childElementCount) log.append(el("p", { class: "muted", text: "No messages yet. Say hello." }))
     poll = setInterval(refresh, 3000)
@@ -742,15 +774,23 @@ const views = {
         const text = box.value.trim()
         if (!text) return
         send.busy = true
+        // shows at once, greyed out until the server has it
+        box.value = ""
+        if (log.querySelector(".muted")) log.replaceChildren()
+        const pending = el("div", { class: "msg pending" }, el("div", { class: "msg-h" }, el("b", { text: acct.name }), el("time", { text: "sending…" })), el("p", { text }))
+        log.append(pending)
+        log.scrollTop = log.scrollHeight
+        send.busy = false
         try {
-          await ask("sendChat", channel, text)
-          box.value = ""
-          if (log.querySelector(".muted")) log.replaceChildren()
-          await refresh()
+          const m = await ask("sendChat", channel, text)
+          pending.remove()
+          if (m?.id) show([m], true)
           log.scrollTop = log.scrollHeight
         } catch (x) {
+          pending.remove()
+          if (!box.value) box.value = text
           status.textContent = x.message
-          if (/Sign in/.test(x.message)) { acct = { name: null }; composer.replaceChildren(signInBox((a) => { acct = a; status.textContent = ""; write() })) }
+          if (/Sign in/.test(x.message)) { forget("account"); acct = { name: null }; composer.replaceChildren(signInBox((a) => { acct = a; status.textContent = ""; write() })) }
         }
         send.busy = false
       }
@@ -764,7 +804,7 @@ const views = {
   },
 
   news: async () => {
-    const [items, channels] = await Promise.all([ask("news"), ask("channels").catch(() => ({}))])
+    const [items, channels] = await Promise.all([askKept("news"), askKept("channels").catch(() => ({}))])
     markNewsSeen(items)
     const KIND = { update: "Update", "new-app": "New app", outage: "Outage", resolved: "Fixed" }
     return page("Community", "Updates, new apps and service status from the Obstat team.",
@@ -790,7 +830,7 @@ const ago = (iso) => {
 
 // The latest few messages across every chat channel
 async function chatHighlights() {
-  const channels = await ask("channels")
+  const channels = await askKept("channels")
   const all = await Promise.all(Object.entries(channels).map(([id, name]) =>
     ask("readChat", id, null).then((msgs) => msgs.slice(-3).map((m) => ({ ...m, channel: id, channelName: name }))).catch(() => [])))
   return all.flat().sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 5)
@@ -814,14 +854,14 @@ function appTile(a) {
     mark(a.name, a),
     el("div", {}, el("h3", { text: a.name }), el("p", { text: a.description || (a.local ? "Made by you" : a.owner) })),
     el("div", { class: "tile-b" },
-      el("span", { class: `state${a.running ? " on" : ""}`, text: a.running ? (a.running.url ? "Running" : "Busy") : a.installed ? "Ready" : "Not installed yet" }),
+      el("span", { class: `state${a.running ? " on" : ""}`, text: a.running ? (busyLabel(a.running)) : a.installed ? "Ready" : "Not installed yet" }),
       btn))
 }
 
 async function homeView() {
   const [mine, news, chats] = await Promise.all([
     ask("apps").then((l) => l.filter((a) => a.installed || a.running || a.local)).catch(() => []),
-    ask("news").catch(() => []),
+    askKept("news").catch(() => []),
     chatHighlights().catch(() => []),
   ])
   const fresh = [...repos].filter((r) => r.reviewedAt).sort((a, b) => new Date(b.reviewedAt) - new Date(a.reviewedAt)).slice(0, 4)
@@ -873,7 +913,7 @@ const IDEAS = [
 const slug = (text) => text.toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().split(/\s+/).slice(0, 3).join("-").slice(0, 41)
 
 async function createView() {
-  const builders = (await ask("tools").catch(() => [])).filter((t) => t.kind === "Terminal")
+  const builders = (await askKept("tools").catch(() => [])).filter((t) => t.kind === "Terminal")
   const found = builders.filter((t) => t.found)
   const task = el("textarea", { id: "task", maxlength: "4000", placeholder: "For example: a page where I drop in a voice memo and get the text back, with a button to copy it." })
   const name = el("input", { id: "appname", maxlength: "41", placeholder: "voice-notes", autocomplete: "off", spellcheck: "false" })
@@ -979,7 +1019,7 @@ function signInBox(done) {
       try {
         const fields = { email, code: code.value.trim() }
         if (!extra.hidden) Object.assign(fields, { name: name.value.trim(), acceptTerms: agree.checked })
-        done(await ask("verifyCode", fields))
+        done(await ask("verifyCode", fields).finally(() => forget("account")))
       } catch (x) {
         if (/Pick a chat name/.test(x.message) && extra.hidden) { extra.hidden = false; msg.textContent = "" } else fail(x)
       }
@@ -993,16 +1033,16 @@ function signInBox(done) {
 }
 
 async function accountBox() {
-  const a = await ask("account")
+  const a = await askKept("account")
   return el("div", {},
     el("h2", { class: "group-h", text: "Chat account" }),
     el("dl", { class: "rows" },
       a.name
         ? el("div", {}, el("dt", {}, `Signed in as ${a.name}`, el("small", { text: "Deleting your account also deletes every chat message you posted." })),
-            el("dd", {}, el("button", { class: "link", text: "Sign out", onclick: async () => { await ask("signOut"); render() } }), " ",
+            el("dd", {}, el("button", { class: "link", text: "Sign out", onclick: async () => { await ask("signOut"); forget("account"); render() } }), " ",
               el("button", { class: "link danger", text: "Delete account", onclick: async (e) => {
                 if (!confirm("Delete your chat account and every message you posted? This can't be undone.")) return
-                try { await ask("deleteAccount"); render() } catch (x) { e.target.textContent = x.message }
+                try { await ask("deleteAccount"); forget("account"); render() } catch (x) { e.target.textContent = x.message }
               } })))
         : el("div", {}, el("dt", {}, "Not signed in", el("small", { text: "You only need an account to post in Community chat." })),
             el("dd", {}, el("a", { class: "link", href: "#/chat", text: "Sign in" })))))
@@ -1081,7 +1121,7 @@ $("updatebtn").addEventListener("click", () => ask("installUpdate"))
 
 async function checkNews() {
   let items
-  try { items = await ask("news") } catch { return }
+  try { items = await askKept("news") } catch { return }
   const seen = newsSeen()
   $("newsdot").hidden = !items.length || items[0].id === seen || location.hash.startsWith("#/news")
   $("newsdot").title = "New announcements"
@@ -1309,15 +1349,22 @@ async function render() {
     on ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")
   }
   clearInterval(poll)
+  // the newest click wins; a page that's slow to get ready dims the old one at once
+  const mine = ++renders
+  const slow = setTimeout(() => { if (mine === renders) view.classList.add("loading") }, 120)
   let nodes
   try {
     nodes = await fn(...args)
   } catch (e) {
     nodes = page("Something went wrong", e.message)
   }
+  clearTimeout(slow)
+  if (mine !== renders) return
+  view.classList.remove("loading")
   view.replaceChildren(el("div", { class: "view-in" }, ...nodes.filter(Boolean)))
   view.scrollTop = 0
 }
+let renders = 0
 
 // links in text open in the browser, never inside the app window
 document.addEventListener("click", (e) => {

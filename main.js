@@ -204,7 +204,12 @@ app.whenReady().then(() => {
   handle("add-key", (k) => { const r = keys.add(k || {}); home.log(`key ${r.name} saved`); return r })
   handle("remove-key", (id) => keys.remove(String(id)))
   handle("disk", () => home.disk())
-  handle("tools", () => findTools())
+  // looking for each tool starts a process, so the answer is kept for a minute
+  let toolsSeen = null
+  handle("tools", () => {
+    if (!toolsSeen || Date.now() - toolsSeen.at > 60000) toolsSeen = { at: Date.now(), list: findTools().catch((e) => { toolsSeen = null; throw e }) }
+    return toolsSeen.list
+  })
   handle("open-folder", async (name) => {
     const err = await shell.openPath(home.dir(name))
     if (err) throw new Error(err)

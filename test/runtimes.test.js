@@ -66,3 +66,22 @@ test("ffmpeg is only downloaded when an app asks for it", async () => {
   assert.equal(fetched.some((u) => /codexffmpeg\/releases\/download\/7\.1\//.test(u)), true)
   assert.equal(r.status().ffmpeg.needed, false)
 })
+
+test("two runs that need the same runtime share one download", async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const buf = fakeArchive()
+  const spec = runtimes.RUNTIMES.python.linux
+  const saved = { ...spec }
+  Object.assign(spec, { sha256: crypto.createHash("sha256").update(buf).digest("hex") })
+  try {
+    let fetches = 0
+    const r = runtimes.create(h, { fetchImpl: async () => { fetches++; return serve(buf)() }, platform: "linux" })
+    const seen = [0, 0]
+    await Promise.all([r.ensure("python", (_n, got) => { seen[0] = got }), r.ensure("python", (_n, got) => { seen[1] = got })])
+    assert.equal(fetches, 1)
+    assert.deepEqual(seen, [buf.length, buf.length])
+    assert.equal(r.status().python.ready, true)
+  } finally {
+    Object.assign(spec, saved)
+  }
+})
