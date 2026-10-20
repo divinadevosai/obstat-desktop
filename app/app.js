@@ -227,20 +227,20 @@ const views = {
 
     function showPlan(p, script = "install.js") {
       const risky = p.commands.filter((c) => c.risks.length)
-      const what = script === "reset.js" ? "reset" : "install"
+      const what = script === "reset.js" ? "reset" : script === "install.js" ? "install" : "start"
       note.replaceChildren(el("div", { class: "plan" },
-        el("h2", { text: what === "reset" ? "Reset steps" : "Install steps" }),
-        el("p", { class: "note", text: `Obstat will run these ${p.commands.length} command${p.commands.length === 1 ? "" : "s"} in the app's own folder.` }),
+        el("h2", { text: `${what[0].toUpperCase()}${what.slice(1)} steps` }),
+        el("p", { class: "note", text: `Obstat will run these ${p.commands.length} command${p.commands.length === 1 ? "" : "s"} in the app's own folder.${what === "start" ? " Nobody has reviewed this app, so Obstat shows its steps the first time and whenever they change." : ""}` }),
         p.unsupported.length && el("p", { class: "card-err", text: `This app uses steps Obstat can't run yet (${p.unsupported.join(", ")}), so the install will stop there.` }),
         risky.length && el("p", { class: "card-err", text: `Careful: ${risky.length} command${risky.length === 1 ? "" : "s"} ${[...new Set(risky.flatMap((c) => c.risks))].join(", ")}.` }),
         el("ol", { class: "cmds" }, ...p.commands.map((c) => el("li", { class: c.risks.length ? "risky" : "" },
           el("code", { text: c.command }),
           (c.path !== "." || c.venv) && el("small", { text: [c.path !== "." && `in ${c.path}`, c.venv && `Python env ${c.venv}`].filter(Boolean).join(" · ") })))),
         el("div", { class: "row-btns" },
-          el("button", { class: "btn small", text: `Run ${what}`, onclick: async () => {
+          el("button", { class: "btn small", text: what === "start" ? "Start it" : `Run ${what}`, onclick: async () => {
             note.replaceChildren()
             try {
-              const r = await ask("run", id, script)
+              const r = await ask("run", id, script, p.token)
               if (!r.ok) appendLog(id, `\nThe ${what} stopped: ${r.error}\n`)
             } catch (err) { appendLog(id, `\n${err.message}\n`) }
             render()
@@ -253,6 +253,7 @@ const views = {
       term.textContent = ""
       try {
         const r = await ask("run", id, script)
+        if (r.needsApproval) return showPlan(r.preview, script)
         if (!r.ok) appendLog(id, `\nIt stopped: ${r.error}\n`)
         // it's up: show it inside Obstat, like a browser tab
         else if (r.running && current?.id === id && location.hash.startsWith("#/app/") && (await ask("app", id))?.running?.url) return go(runHash(id))
@@ -740,7 +741,8 @@ function appTile(a) {
         ev.stopPropagation()
         const b = ev.currentTarget
         b.disabled = true; b.textContent = "Starting…"
-        await ask("run", a.id, "start.js").catch(() => {})
+        const r = await ask("run", a.id, "start.js").catch(() => null)
+        if (r?.needsApproval) return go(appHash(a))
         if (location.hash.startsWith("#/home") || location.hash === "") render()
       } })
       : null

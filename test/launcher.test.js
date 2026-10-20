@@ -206,3 +206,27 @@ test("hf.download only builds a plain hf download command", () => {
     { _: ["org/m"], token: "hf_x" }, { _: ["org/m"], endpoint: "https://evil.example" }, { _: ["org/m"], "repo-type": "x" }, { _: ["org/m", "--token=x"] },
   ]) assert.throws(() => hfCommand(bad), /hf\.download/, JSON.stringify(bad))
 })
+
+test("launcher code gets the same answer every time: no clock, randomness or GC timing", () => {
+  const a = app({ "install.js": `
+    const bits = [Math.random(), Date.now(), new Date().getTime(), String(Date()).length > 0, typeof Intl, typeof WeakRef, typeof FinalizationRegistry, typeof SharedArrayBuffer, typeof WebAssembly, new Date(0).constructor === Date]
+    module.exports = { run: [{ method: "shell.run", params: { message: JSON.stringify(bits) } }] }` })
+  const seen = new Set()
+  for (let i = 0; i < 6; i++) seen.add(loadScript(a.file("install.js"), { root: a.dir, ctx: CTX }).run[0].params.message)
+  assert.equal(seen.size, 1)
+  assert.deepEqual(JSON.parse([...seen][0]), [0.5, 1767225600000, 1767225600000, true, "undefined", "undefined", "undefined", "undefined", "undefined", true])
+})
+
+test("templates get no clock or randomness either", () => {
+  assert.equal(render("{{Math.random()}}-{{Date.now()}}-{{typeof Intl}}", { platform: "linux" }), "0.5-1767225600000-undefined")
+})
+
+test("a launcher that returns huge steps is refused", () => {
+  const a = app({ "install.js": `module.exports = { run: Array.from({ length: 1500 }, () => ({ method: "shell.run", params: { message: "x".repeat(1000) } })) }` })
+  assert.throws(() => loadScript(a.file("install.js"), { root: a.dir, ctx: CTX }), /too big/)
+})
+
+test("a relative path to a launcher still finds its files", () => {
+  const a = app({ "config.js": `module.exports = { cmd: "echo ok" }`, "install.js": `const c = require("./config.js"); module.exports = { run: [{ method: "shell.run", params: { message: c.cmd } }] }` })
+  assert.equal(loadScript(path.relative(process.cwd(), a.file("install.js"))).run[0].params.message, "echo ok")
+})

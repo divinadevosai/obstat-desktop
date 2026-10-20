@@ -265,9 +265,11 @@ app.whenReady().then(() => {
     return apps.get(id)
   })
   handle("app-preview", (id, script) => apps.preview(id, script))
-  handle("app-run", async (id, script) => {
+  handle("app-run", async (id, script, token) => {
     home.log(`${id}: ${script}`)
-    return apps.run(id, script)
+    // install and reset steps only run as the plan people were shown
+    if ((script === "install.js" || script === "reset.js") && typeof token !== "string") throw new Error("Look at the steps first, then run them from there.")
+    return apps.run(id, script, typeof token === "string" ? token : null)
   })
   handle("app-stop", (id) => apps.stop(id))
   // Open a running app inside Obstat. The window names the app; the address

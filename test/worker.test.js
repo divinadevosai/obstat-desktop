@@ -25,7 +25,7 @@ function app(files) {
 }
 
 // runs one script and collects its log, local values and how it ended
-function run(dir, script, ctx = {}, env = {}) {
+function run(dir, script, ctx = {}, env = {}, approved = null) {
   return new Promise((resolve) => {
     const child = fork(WORKER, [], { stdio: ["ignore", "ignore", "ignore", "ipc"] })
     const out = { log: "", local: {}, end: null }
@@ -36,7 +36,7 @@ function run(dir, script, ctx = {}, env = {}) {
       else if (m.type === "done" || m.type === "error") { out.end = m.type; out.error = m.message }
     })
     child.on("exit", () => { clearTimeout(timer); resolve(out) })
-    child.send({ type: "run", job: { appDir: dir, script, env, paths: [], python: "python3", ctx: { platform: process.platform, gpu: "none", args: {}, input: {}, port: 42020, env: {}, ...ctx } } })
+    child.send({ type: "run", job: { appDir: dir, script, env, paths: [], python: "python3", ctx: { platform: process.platform, gpu: "none", args: {}, input: {}, port: 42020, env: {}, ...ctx }, approved } })
   })
 }
 const steps = (run) => `module.exports = { run: ${JSON.stringify(run)} }`
@@ -139,4 +139,58 @@ test("old install.json/start.json get a one-line .js wrapper; the GPU name comes
   assert.equal(fs.readFileSync(path.join(a.dir, "start.js"), "utf8"), "// mine")
   assert.equal(gpuModel("GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-1234)\nGPU 1: NVIDIA GeForce RTX 3060 (UUID: GPU-5)\n"), "NVIDIA GeForce RTX 5090")
   assert.equal(gpuModel(""), null)
+})
+
+// An approved script runs as its plan showed it, even if the app's files change
+// between the plan and the run (an earlier step can write them).
+const { approve } = require("../lib/script")
+const CTX = { platform: process.platform, gpu: "none", args: {}, input: {}, port: 42020, env: {} }
+const viaIpc = (x) => JSON.parse(JSON.stringify(x))
+
+test("an approved run uses the scripts the plan read, not files changed since", async () => {
+  const a = app({
+    "install.js": steps([{ method: "shell.run", params: { message: "echo first > out.txt" } }, { method: "script.start", params: { uri: "more.js" } }]),
+    "more.js": `module.exports = (kernel) => ({ run: [{ method: "shell.run", params: { message: kernel.exists("flag") ? "echo EVIL >> out.txt" : "echo fine >> out.txt" } }] })`,
+  })
+  const { approved } = approve(path.join(a.dir, "install.js"), CTX)
+  // after the plan: the flag appears and more.js is rewritten
+  fs.writeFileSync(path.join(a.dir, "flag"), "")
+  fs.writeFileSync(path.join(a.dir, "more.js"), steps([{ method: "shell.run", params: { message: "echo EVIL2 >> out.txt" } }]))
+  const r = await run(a.dir, "install.js", {}, {}, viaIpc(approved))
+  assert.equal(r.end, "done", r.error)
+  assert.match(fs.readFileSync(path.join(a.dir, "out.txt"), "utf8"), /^first\s+fine\s*$/)
+})
+
+test("an approved run stops at a step that differs from the plan", async () => {
+  const a = app({ "install.js": steps([
+    { method: "shell.run", params: { message: "echo hi", on: [{ event: "/(hi)/", done: true }] } },
+    { method: "shell.run", params: { message: "echo {{input.event ? 'changed' : 'same'}} > out.txt" } },
+  ]) })
+  const { approved, steps: shown } = approve(path.join(a.dir, "install.js"), CTX)
+  assert.equal(shown[1].commands[0], "echo same > out.txt")
+  const r = await run(a.dir, "install.js", {}, {}, viaIpc(approved))
+  assert.equal(r.end, "error")
+  assert.match(r.error, /changed from the steps you approved/)
+  assert.equal(fs.existsSync(path.join(a.dir, "out.txt")), false)
+})
+
+test("an approved run won't run a step the plan skipped", async () => {
+  const a = app({ "install.js": steps([
+    { method: "shell.run", params: { message: "echo hi", on: [{ event: "/(hi)/", done: true }] } },
+    { when: "{{input.event}}", method: "shell.run", params: { message: "echo hidden > out.txt" } },
+  ]) })
+  const { approved, steps: shown } = approve(path.join(a.dir, "install.js"), CTX)
+  assert.equal(shown.length, 1)
+  const r = await run(a.dir, "install.js", {}, {}, viaIpc(approved))
+  assert.equal(r.end, "error")
+  assert.equal(fs.existsSync(path.join(a.dir, "out.txt")), false)
+})
+
+test("an approved run won't start a script the plan didn't read", async () => {
+  const a = app({ "install.js": steps([{ method: "script.start", params: { uri: "{{input.event ? 'b.js' : 'a.js'}}" } }]), "a.js": steps([]), "b.js": steps([]) })
+  const { approved } = approve(path.join(a.dir, "install.js"), CTX)
+  delete approved.scripts[path.join(a.dir, "a.js")]
+  const r = await run(a.dir, "install.js", {}, {}, viaIpc(approved))
+  assert.equal(r.end, "error")
+  assert.match(r.error, /wasn't in the steps you approved/)
 })

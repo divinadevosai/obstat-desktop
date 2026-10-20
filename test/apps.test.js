@@ -140,3 +140,29 @@ test("app menu: run options, edit launcher, reset, copy, update and made-here ap
   assert.throws(() => a.createLocal({ name: "../x", task: "x" }), /lowercase/)
   assert.equal(await a.fetchApp(made, () => {}), a.appDir(made.id))
 })
+
+test("an unreviewed app's steps show before they first run, and again when they change", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  const dir = a.appDir("x/u")
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/u": { id: "x/u", owner: "x", name: "u", reviewed: false, installed: true } }))
+  const write = (cmd) => fs.writeFileSync(path.join(dir, "start.js"), `module.exports = { run: [{ method: "shell.run", params: { message: ["${cmd}"] } }] }`)
+  write("echo one >> out.txt")
+
+  const first = await a.run("x/u", "start.js")
+  assert.equal(first.needsApproval, true)
+  assert.deepEqual(first.preview.commands.map((c) => c.command), ["echo one >> out.txt"])
+  assert.equal(fs.existsSync(path.join(dir, "out.txt")), false)
+  await assert.rejects(a.run("x/u", "start.js", "made-up"), /out of date/)
+
+  assert.deepEqual(await a.run("x/u", "start.js", first.preview.token), { ok: true })
+  await assert.rejects(a.run("x/u", "start.js", first.preview.token), /out of date/) // a token works once
+  assert.deepEqual(await a.run("x/u", "start.js"), { ok: true }) // seen and unchanged: runs
+  assert.equal(fs.readFileSync(path.join(dir, "out.txt"), "utf8"), "one\none\n")
+
+  write("echo two >> out.txt")
+  const changed = await a.run("x/u", "start.js")
+  assert.equal(changed.needsApproval, true)
+  assert.equal(fs.readFileSync(path.join(dir, "out.txt"), "utf8"), "one\none\n")
+})
