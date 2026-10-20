@@ -17,11 +17,11 @@ jobs:
           sleep 15
           cat > t.mjs <<'JS'
           import { chromium } from "playwright"
-          for (const flags of [[], ["--use-angle=d3d11"]]) {
+          for (const flags of [[]]) {
             const b = await chromium.launch({ args: flags })
             const p = await b.newPage()
-            p.on("console", m => console.log("console", m.type(), m.text().slice(0, 400)))
-            p.on("pageerror", e => console.log("pageerror", e.stack?.slice(0, 1500)))
+            p.on("console", async m => { const a = []; for (const x of m.args()) { try { a.push(await x.evaluate(v => v instanceof Error ? v.stack || String(v) : typeof v === "object" ? JSON.stringify(v)?.slice(0, 800) : String(v))) } catch { a.push("?") } } console.log("console", m.type(), a.join(" | ").slice(0, 3000), JSON.stringify(m.location())) })
+            p.on("pageerror", e => console.log("pageerror", e.name, "|", e.message, "|", String(e).slice(0, 500), "|", (e.stack || "").slice(0, 2500)))
             p.on("requestfailed", r => console.log("failed", r.url(), r.failure()?.errorText))
             p.on("response", r => { if (r.status() >= 400) console.log("status", r.status(), r.url()) })
             await p.goto("http://127.0.0.1:5173/")
