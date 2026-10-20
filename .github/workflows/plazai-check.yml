@@ -1,0 +1,35 @@
+name: Plazai Windows check
+on: push
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: git clone https://github.com/divinadevosai/plazai C:\plazai
+      - run: npm install
+        working-directory: C:\plazai
+      - name: Load page
+        shell: bash
+        run: |
+          mkdir -p /c/pw && cd /c/pw && npm init -y >/dev/null && npm install playwright@1.56.1 >/dev/null && npx playwright install chromium >/dev/null
+          (cd /c/plazai && npx vite > /c/pw/vite.log 2>&1 &)
+          sleep 15
+          cat > t.mjs <<'JS'
+          import { chromium } from "playwright"
+          for (const flags of [[], ["--use-angle=d3d11"]]) {
+            const b = await chromium.launch({ args: flags })
+            const p = await b.newPage()
+            p.on("console", m => console.log("console", m.type(), m.text().slice(0, 400)))
+            p.on("pageerror", e => console.log("pageerror", e.stack?.slice(0, 1500)))
+            p.on("requestfailed", r => console.log("failed", r.url(), r.failure()?.errorText))
+            p.on("response", r => { if (r.status() >= 400) console.log("status", r.status(), r.url()) })
+            await p.goto("http://127.0.0.1:5173/")
+            await p.waitForTimeout(15000)
+            console.log("flags", flags, "root length", (await p.innerHTML("#root")).length)
+            await p.screenshot({ path: `shot${flags.length}.png` })
+            await b.close()
+          }
+          JS
+          node t.mjs
+          echo ---- vite; cat vite.log
