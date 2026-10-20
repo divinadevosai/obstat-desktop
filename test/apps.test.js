@@ -181,3 +181,27 @@ test("a change to only a step's environment still counts as changed steps", { sk
   write({ A: "1", PYTHONSTARTUP: "evil.py" })
   assert.equal((await a.run("x/e", "start.js")).needsApproval, true)
 })
+
+test("a copy of an unreviewed app still shows its steps before they first run", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  fs.mkdirSync(a.appDir("x/c"), { recursive: true })
+  fs.writeFileSync(path.join(a.appDir("x/c"), "start.js"), `module.exports = { run: [{ method: "shell.run", params: { message: ["echo hi"] } }] }`)
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/c": { id: "x/c", owner: "x", name: "c", reviewed: false, installed: true } }))
+  const copy = await a.copy("x/c")
+  assert.equal((await a.run(copy.id, "start.js")).needsApproval, true)
+})
+
+test("Run install runs the steps that were shown, even if the files change after", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  const dir = a.appDir("x/i")
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/i": { id: "x/i", owner: "x", name: "i", reviewed: false } }))
+  const write = (cmd) => fs.writeFileSync(path.join(dir, "install.js"), `module.exports = (kernel) => ({ run: [{ method: "shell.run", params: { message: [${JSON.stringify(cmd)}] } }] })`)
+  write("echo shown > out.txt")
+  const p = await a.preview("x/i", "install.js")
+  write("echo hidden > out.txt")
+  assert.deepEqual(await a.run("x/i", "install.js", p.token), { ok: true })
+  assert.equal(fs.readFileSync(path.join(dir, "out.txt"), "utf8"), "shown\n")
+})

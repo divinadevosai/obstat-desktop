@@ -116,7 +116,7 @@ test("hf.download runs Obstat's own hf, never the app's, with huggingface.co as 
   const r = await run(a.dir, "install.js", {}, { HF_ENDPOINT: "https://evil.example" }, null, { hfEnv: tool })
   assert.equal(r.end, "done", r.error)
   assert.doesNotMatch(r.log, /APP HF/)
-  assert.match(r.log, /pip: -m pip install --quiet huggingface_hub>=0\.34/)
+  assert.match(r.log, /pip: -I -m pip install --quiet huggingface_hub>=0\.34/)
   assert.match(r.log, /hf args: download org\/model w\.bin --local-dir models\/m/)
   assert.match(r.log, /endpoint: https:\/\/huggingface\.co\n/)
 })

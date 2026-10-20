@@ -191,7 +191,7 @@ test("plan shows fs.copy, hf.download, jump and proxy steps instead of stopping 
   const steps = plan(a.file("install.js"), CTX)
   assert.deepEqual(steps.map((s) => s.method), ["fs.copy", "hf.download", "jump", "proxy.start", "notify"])
   assert.ok(steps.every((s) => !s.unsupported))
-  assert.deepEqual(commandsOf(steps).map((c) => c.command), ['python -m pip install --quiet "huggingface_hub>=0.34"', 'hf download org/model "weights.bin" --local-dir "models/m"'])
+  assert.deepEqual(commandsOf(steps).map((c) => c.command), ['python -I -m pip install --quiet "huggingface_hub>=0.34"', 'hf download org/model "weights.bin" --local-dir "models/m"'])
   assert.equal(steps[2].to, "end")
 })
 
