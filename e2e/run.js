@@ -167,7 +167,7 @@ async function main() {
   // A copy of the app an older Obstat left running holds the port: Obstat ends it and starts again
   if (spec.leftover && process.platform === "win32") {
     const port = Number(new URL(url).port)
-    const holder = path.join(dir, "obstat-e2e-holder.js")
+    const holder = path.join(dir, "obstat-e2e-holder.cjs")
     fs.writeFileSync(holder, `require("node:http").createServer((q, r) => r.end("old copy")).listen(${port}, "127.0.0.1")\n`)
     // its command line names a file in the app's folder, as a real leftover's does
     const holderLog = fs.openSync(path.join(OUT, "holder.log"), "w")
