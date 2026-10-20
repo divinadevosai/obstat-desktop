@@ -757,9 +757,12 @@ const views = {
       if (!own) last = msgs[msgs.length - 1].id
       if (stick || msgs.length > 20) log.scrollTop = log.scrollHeight
     }
-    const refresh = async () => {
+    // one read at a time, so two overlapping reads can't both add the same messages
+    let reading = null
+    const refresh = () => reading || (reading = (async () => {
       try { show(await ask("readChat", channel, last)); status.textContent = "" } catch (x) { status.textContent = x.message }
-    }
+      finally { reading = null }
+    })())
     await refresh()
     if (!log.childElementCount) log.append(el("p", { class: "muted", text: "No messages yet. Say hello." }))
     poll = setInterval(refresh, 3000)
