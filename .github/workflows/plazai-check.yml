@@ -6,7 +6,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: git clone https://github.com/divinadevosai/plazai C:\plazai
+      - run: git clone -b fix-windows-file-names https://github.com/divinadevosai/plazai C:\plazai
       - run: npm install
         working-directory: C:\plazai
       - name: Load page
