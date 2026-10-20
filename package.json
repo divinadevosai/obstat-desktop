@@ -1,0 +1,63 @@
+{
+  "name": "obstat-desktop",
+  "productName": "Obstat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Install and run reviewed AI apps with one click.",
+  "author": "SWE3WE <hello@swe3we.dev>",
+  "license": "MIT",
+  "repository": "github:divinadevosai/obstat-desktop",
+  "main": "main.js",
+  "scripts": {
+    "sync": "node scripts/sync.js",
+    "prestart": "npm run sync",
+    "start": "electron .",
+    "predist": "npm run sync",
+    "dist": "electron-builder --win --publish never",
+    "test": "node --test test/*.test.js"
+  },
+  "build": {
+    "appId": "dev.swe3we.obstat",
+    "productName": "Obstat",
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**",
+      "app/**",
+      "skills/**"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://obstat.app/update"
+      }
+    ],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Obstat-Setup-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

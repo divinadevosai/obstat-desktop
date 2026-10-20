@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Obstat UI</title>
+<style>
+:root{--bg:#0b0a12;--panel:#15131f;--panel2:#1c1a29;--line:#2a2740;--fg:#ece8f8;--dim:#a39fbd;--gold:#d9b46a;--ink:#1a1206;--indigo:#8f8cf5;--bad:#ff9d7a;--ok:#9ad7b0;
+  --ui:"Segoe UI",system-ui,-apple-system,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--ui)}
+main{max-width:1100px;margin:0 auto;padding:28px 24px 48px;display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:24px}
+@media (max-width:820px){main{grid-template-columns:1fr}}
+header{grid-column:1/-1;display:flex;align-items:center;gap:14px}
+header .tag{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo)}
+h1{margin:2px 0 0;font-size:24px;font-weight:650;letter-spacing:-.01em}
+.sub{margin:4px 0 0;color:var(--dim);max-width:70ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:14px;align-content:start;min-width:0}
+.field{display:grid;gap:5px}
+.field label{font-weight:600;text-transform:capitalize}
+.field small{color:var(--dim);font-size:13px}
+input[type=text],select{width:100%;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:14px var(--ui)}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--indigo);outline-offset:1px}
+.row{display:flex;gap:8px;align-items:center}
+.check{display:flex;gap:10px;align-items:flex-start}
+.check input{margin-top:4px;accent-color:var(--gold)}
+.pick{white-space:nowrap}
+button{font:600 14px var(--ui);border-radius:10px;padding:10px 16px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer}
+button.go{background:var(--gold);border-color:var(--gold);color:var(--ink)}
+button[disabled]{opacity:.5;cursor:default}
+pre:empty{display:none}
+pre{margin:0;background:#07060c;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font:13px/1.6 var(--mono);color:#b9b4d8;white-space:pre-wrap;word-break:break-word;min-height:200px;max-height:55vh;overflow:auto}
+.status{font-size:14px;color:var(--dim)}
+.status.ok{color:var(--ok)}.status.bad{color:var(--bad)}
+.files{display:grid;gap:12px}
+.file{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:8px}
+.file img,.file video{max-width:100%;border-radius:8px}
+.file audio{width:100%}
+.file a{color:var(--gold)}
+details summary{cursor:pointer;color:var(--dim)}
+.none{color:var(--dim)}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="tag">Obstat UI</div>
+      <h1 id="name">Loading…</h1>
+      <p class="sub" id="desc"></p>
+    </div>
+  </header>
+  <form class="card" id="form" autocomplete="off">
+    <div id="fields"><p class="none">Reading the app's options…</p></div>
+    <div class="field">
+      <label for="extra">More options</label>
+      <input type="text" id="extra" placeholder="Anything else to pass, like --steps 20">
+      <small>Typed exactly as you would after the command.</small>
+    </div>
+    <div class="row">
+      <button class="go" id="go" type="submit">Run</button>
+      <button id="stop" type="button" disabled>Stop</button>
+    </div>
+    <details><summary>The app's own help</summary><pre id="help"></pre></details>
+  </form>
+  <section class="card">
+    <div class="status" id="status" role="status">Fill in the form and click Run.</div>
+    <pre id="out"></pre>
+    <div class="files" id="files"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id)
+const H = { "x-obstat-ui": "1" }
+const el = (tag, attrs = {}, ...kids) => { const n = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) { if (v == null || v === false) continue; if (k === "text") n.textContent = v; else n.setAttribute(k, v === true ? "" : v) } for (const k of kids) if (k) n.append(k); return n }
+let fields = []
+
+// split "a 'b c' d" the way a shell would, without running a shell
+function words(s) {
+  const out = []; let cur = "", q = null, any = false
+  for (const ch of s) {
+    if (q) { if (ch === q) q = null; else cur += ch }
+    else if (ch === '"' || ch === "'") { q = ch; any = true }
+    else if (/\s/.test(ch)) { if (cur || any) out.push(cur); cur = ""; any = false }
+    else cur += ch
+  }
+  if (cur || any) out.push(cur)
+  return out
+}
+
+async function upload(file) {
+  const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, { method: "PUT", headers: H, body: file })
+  const j = await res.json(); if (!res.ok) throw new Error(j.error); return j.path
+}
+
+function draw(info) {
+  $("name").textContent = info.name
+  $("desc").textContent = info.description || `Runs ${info.command.join(" ")}`
+  $("help").textContent = info.help || "The app printed no help."
+  fields = info.fields
+  const box = $("fields"); box.replaceChildren()
+  box.style.display = "grid"; box.style.gap = "14px"
+  if (!fields.length) box.append(el("p", { class: "none", text: "This app didn't list its options, so type them under More options." }))
+  fields.forEach((f, i) => {
+    const id = `f${i}`
+    if (f.kind === "flag") {
+      box.append(el("div", { class: "check" }, el("input", { type: "checkbox", id }), el("label", { for: id }, el("strong", { text: f.label }), f.help ? el("div", {}, el("small", { text: f.help })) : null)))
+      return
+    }
+    const input = f.kind === "choice"
+      ? el("select", { id }, el("option", { value: "", text: "Default" }), ...f.choices.map((c) => el("option", { value: c, text: c })))
+      : el("input", { type: "text", id, placeholder: f.placeholder || "" })
+    const row = el("div", { class: "row" }, input)
+    if (f.file) {
+      const picker = el("input", { type: "file", hidden: true })
+      const btn = el("button", { type: "button", class: "pick", text: "Choose file" })
+      btn.onclick = () => picker.click()
+      picker.onchange = async () => {
+        if (!picker.files[0]) return
+        btn.disabled = true; btn.textContent = "Adding…"
+        try { input.value = await upload(picker.files[0]) } catch (e) { $("status").textContent = e.message }
+        btn.disabled = false; btn.textContent = "Choose file"
+      }
+      row.append(btn, picker)
+    }
+    box.append(el("div", { class: "field" }, el("label", { for: id, text: f.label }), row, f.help ? el("small", { text: f.help }) : null))
+  })
+}
+
+function args() {
+  const out = []
+  fields.forEach((f, i) => {
+    const n = $(`f${i}`)
+    if (f.kind === "flag") { if (n.checked) out.push(f.key) }
+    else if (n.value.trim()) { if (f.kind === "positional") out.push(n.value.trim()); else out.push(f.key, n.value.trim()) }
+  })
+  return [...out, ...words($("extra").value)]
+}
+
+const KIND = (p) => /\.(png|jpe?g|gif|webp)$/i.test(p) ? "img" : /\.(wav|mp3|ogg|flac)$/i.test(p) ? "audio" : /\.(mp4|webm)$/i.test(p) ? "video" : /\.(txt|json|csv|md|srt)$/i.test(p) ? "text" : "other"
+async function showFiles(files) {
+  const box = $("files"); box.replaceChildren()
+  for (const p of files) {
+    const src = `/file?p=${encodeURIComponent(p)}`
+    const k = KIND(p)
+    const card = el("div", { class: "file" }, el("strong", { text: p }))
+    if (k === "img") card.append(el("img", { src, alt: p }))
+    else if (k === "audio") card.append(el("audio", { src, controls: true }))
+    else if (k === "video") card.append(el("video", { src, controls: true }))
+    else if (k === "text") { const pre = el("pre", { text: "…" }); pre.style.minHeight = "0"; card.append(pre); fetch(src).then((r) => r.text()).then((t) => { pre.textContent = t.slice(0, 20000) }) }
+    card.append(el("a", { href: `${src}&download=1`, text: "Save a copy" }))
+    box.append(card)
+  }
+}
+
+async function follow(id) {
+  $("go").disabled = true; $("stop").disabled = false
+  for (;;) {
+    const r = await (await fetch(`/api/run/${id}`)).json()
+    const o = $("out"), stick = o.scrollTop + o.clientHeight >= o.scrollHeight - 30
+    o.textContent = r.out; if (stick) o.scrollTop = o.scrollHeight
+    if (r.done) {
+      $("status").textContent = r.code === 0 ? `Done in ${r.seconds}s.${r.files.length ? " It made these files:" : ""}` : `It stopped with an error (code ${r.code}). Check the output above.`
+      $("status").className = r.code === 0 ? "status ok" : "status bad"
+      showFiles(r.files)
+      break
+    }
+    $("status").textContent = `Running… ${r.seconds}s`; $("status").className = "status"
+    await new Promise((res) => setTimeout(res, 700))
+  }
+  $("go").disabled = false; $("stop").disabled = true
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault()
+  $("files").replaceChildren(); $("out").textContent = ""
+  const res = await fetch("/api/run", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ args: args() }) })
+  const j = await res.json()
+  if (!res.ok) { $("status").textContent = j.error; $("status").className = "status bad"; return }
+  follow(j.id)
+})
+$("stop").addEventListener("click", () => fetch("/api/stop", { method: "POST", headers: H }))
+
+fetch("/api/info").then((r) => r.json()).then((info) => { draw(info); if (info.running) follow(info.running) })
+</script>
+</body>
+</html>

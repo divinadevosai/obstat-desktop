@@ -1,0 +1,6 @@
+node_modules/
+dist/
+# copied from brand/ by scripts/sync.js
+app/obstat.css
+app/obstat.svg
+app/fonts/

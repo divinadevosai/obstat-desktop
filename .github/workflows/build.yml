@@ -1,0 +1,61 @@
+# Builds the Obstat installer for Windows and puts it on the "desktop-preview"
+# release, with latest.yml for the app's self-updater (via obstat.app/update).
+# Obstat-Setup.exe is a copy under a fixed name, for obstat.app's Download button.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# a newer push replaces a build still waiting for a runner
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      # the token isn't left in .git/config, so install scripts and the build can't use it
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      # every build gets its own version, so installed copies can see it's newer and update
+      # (0.2.x: builds from this repo come after the 0.1.x builds made before it was public)
+      - run: npm pkg set version=0.2.${{ github.run_number }}
+        shell: bash
+      - run: npm run dist
+      - name: Check the self-updater's files were made
+        shell: bash
+        run: ls dist/latest.yml dist/Obstat-Setup-*.exe dist/Obstat-Setup-*.exe.blockmap
+      - name: Publish the installer to the desktop-preview release
+        # only merged code reaches people: pull requests build and test, but don't publish
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view desktop-preview >/dev/null 2>&1 || gh release create desktop-preview \
+            --prerelease --target "${{ github.sha }}" --title "Obstat Desktop" \
+            --notes "The latest build of Obstat Desktop for Windows. Download Obstat-Setup.exe and run it."
+          exe="$(ls dist/Obstat-Setup-*.exe)"
+          cp "$exe" dist/Obstat-Setup.exe
+          gh release upload desktop-preview "$exe" "$exe.blockmap" dist/Obstat-Setup.exe --clobber
+          # latest.yml goes last: it's what tells installed copies a new version is ready
+          gh release upload desktop-preview dist/latest.yml --clobber
+          # keep only this build's installer, so the release doesn't fill up with old ones
+          keep="$(basename "$exe")"
+          gh release view desktop-preview --json assets --jq '.assets[].name' | while read -r name; do
+            case "$name" in Obstat-Setup.exe) ;; Obstat-Setup-*) [ "$name" = "$keep" ] || [ "$name" = "$keep.blockmap" ] || gh release delete-asset desktop-preview "$name" --yes ;; esac
+          done

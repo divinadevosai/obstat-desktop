@@ -1,0 +1,12 @@
+[
+  { "name": "obstat", "title": "Use Obstat apps", "summary": "Lets your agent see, start and stop the apps you installed.", "ask": "Start my image app and tell me its address", "worksWith": "every app", "core": true },
+  { "name": "obstat-image", "title": "Images", "summary": "Single images or batches of hundreds, saved with their prompts.", "ask": "Make 50 product shots of my sneaker on different backgrounds", "worksWith": "AUTOMATIC1111, Forge, ComfyUI, Fooocus" },
+  { "name": "obstat-voice", "title": "Voiceovers", "summary": "Narration from a script, or your own cloned voice.", "ask": "Read this script in my voice and save it as an MP3", "worksWith": "OpenVoice, F5-TTS, XTTS, Bark" },
+  { "name": "obstat-transcribe", "title": "Transcripts and subtitles", "summary": "Text and SRT subtitles from any recording, made offline.", "ask": "Subtitle every video in my Recordings folder", "worksWith": "Whisper, WhisperX, faster-whisper" },
+  { "name": "obstat-chat-model", "title": "Private chat model", "summary": "Use a local language model for drafts, summaries and bulk text jobs.", "ask": "Summarise these 200 customer emails into themes", "worksWith": "text-generation-webui, Ollama-style servers" },
+  { "name": "obstat-train-lora", "title": "Train your own style", "summary": "Prepare a dataset, caption it and train a LoRA.", "ask": "Train a LoRA of my product from these 20 photos", "worksWith": "FluxGym" },
+  { "name": "obstat-video", "title": "Video clips", "summary": "Text-to-video and image-to-video clips, stitched together.", "ask": "Turn these 6 images into a 30-second clip", "worksWith": "Wan, LTX-Video, HunyuanVideo" },
+  { "name": "obstat-fix-install", "title": "Fix an install", "summary": "Reads a failed install's log, explains it and fixes it safely.", "ask": "FluxGym won't start, fix it", "worksWith": "every app" },
+  { "name": "obstat-app-builder", "title": "Make a repo Obstat-ready", "summary": "Writes install and start scripts so any repo runs in one click.", "ask": "Make this GitHub project installable in Obstat", "worksWith": "any GitHub repo" },
+  { "name": "obstat-pipeline", "title": "Chain apps together", "summary": "One job across several apps: script, voice, images, video.", "ask": "Write, narrate and illustrate a 60-second explainer", "worksWith": "any mix of apps" }
+]
