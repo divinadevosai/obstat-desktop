@@ -241,3 +241,24 @@ test("What's changed lists the app's newest commits, the launcher's and the app'
   assert.equal(c.current, head)
   assert.equal(c.sections[1].commits[0].message, "upstream: faster model loading")
 })
+
+test("an app is busy (and can be stopped) while Obstat is still downloading ffmpeg for it", async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  let release, asked = 0
+  const runtimes = { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git", ensure: () => { asked++; return new Promise((r) => { release = r }) } }
+  const a = apps.create(h, runtimes)
+  const id = "x/sound"
+  fs.mkdirSync(a.appDir(id), { recursive: true })
+  fs.writeFileSync(path.join(a.appDir(id), "start.js"), `module.exports = { run: [{ method: "shell.run", params: { message: ["echo hi"] } }] }`)
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ [id]: { id, reviewed: true, installed: true, ffmpeg: true } }))
+  const first = a.run(id, "start.js")
+  await new Promise((r) => setImmediate(r))
+  assert.equal(asked, 1)
+  assert.equal(a.get(id).running.script, "start.js")
+  await assert.rejects(a.run(id, "start.js"), /already busy/)
+  assert.equal(asked, 1)
+  assert.equal(a.stop(id), true)
+  assert.equal(a.get(id).running, null)
+  release()
+  assert.deepEqual(await first, { ok: false, error: "Stopped." })
+})

@@ -352,3 +352,7 @@ svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-l
 .update-btn:hover{filter:brightness(1.08)}
 .update-btn:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
 .update-btn[hidden]{display:none}
+
+/* a page that's slow to get ready: the old one dims, so the click visibly landed */
+#view.loading > * { opacity: .55; transition: opacity .15s ease .05s; pointer-events: none; }
+.msg.pending { opacity: .6; }
