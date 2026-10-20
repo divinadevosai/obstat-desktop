@@ -263,3 +263,20 @@ test("Obstat's own settings reach every command, and a step's own env wins", { s
   assert.match(r.log, /B=echo \[obstat-open\] %s G=127\.0\.0\.1 S=true/)
   assert.match(r.log, /G2=0\.0\.0\.0/)
 })
+
+test("an npm install that fails on peer dependencies is tried once more the way older npm did", { skip: !posix }, async () => {
+  const { dir, top } = app({ "install.js": `module.exports = { run: [{ method: "shell.run", params: { message: ["npm install"] } }] }` })
+  const bin = path.join(top, "bin")
+  fs.mkdirSync(bin)
+  fs.writeFileSync(path.join(bin, "npm"), `#!/bin/sh\nif [ "$npm_config_legacy_peer_deps" = "true" ]; then echo installed; exit 0; fi\necho "npm error code ERESOLVE" >&2; exit 1\n`, { mode: 0o755 })
+  const out = await run(dir, "install.js", {}, {}, null, { paths: [bin] })
+  assert.equal(out.end, "done", out.log)
+  assert.match(out.log, /legacy-peer-deps/)
+  assert.match(out.log, /installed/)
+
+  // anything else that fails is not tried again
+  fs.writeFileSync(path.join(bin, "npm"), `#!/bin/sh\necho "npm error code E404" >&2; exit 1\n`, { mode: 0o755 })
+  const failed = await run(dir, "install.js", {}, {}, null, { paths: [bin] })
+  assert.equal(failed.end, "error")
+  assert.doesNotMatch(failed.log, /legacy-peer-deps/)
+})

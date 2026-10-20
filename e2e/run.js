@@ -51,13 +51,18 @@ const problems = []
 const fail = (msg) => { problems.push(msg); say(`FAIL: ${msg}`) }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// Every browser running on this PC, so the test can tell if the app opened one.
+// Every browser window running on this PC, so the test can tell if the app opened one.
+// Firefox's scheduled background updater (firefox.exe --backgroundtask) isn't a window.
 const BROWSERS = /^(msedge|chrome|firefox|brave|iexplore|opera)\.exe$/i
+const BROWSER_LIST = "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(msedge|chrome|firefox|brave|iexplore|opera)\\.exe$' } | ForEach-Object { '{0}|{1}|{2}' -f $_.Name, $_.ProcessId, $_.CommandLine }"
 function browsers() {
   if (process.platform !== "win32") return Promise.resolve(new Set())
-  return new Promise((resolve) => execFile("tasklist", ["/FO", "CSV", "/NH"], { windowsHide: true, maxBuffer: 1 << 24 }, (err, out) => {
+  return new Promise((resolve) => execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", BROWSER_LIST], { windowsHide: true, maxBuffer: 1 << 24 }, (err, out) => {
     const pids = new Set()
-    if (!err) for (const line of String(out).split(/\r?\n/)) { const m = /^"([^"]+)","(\d+)"/.exec(line); if (m && BROWSERS.test(m[1])) pids.add(`${m[1]}:${m[2]}`) }
+    if (!err) for (const line of String(out).split(/\r?\n/)) {
+      const [name, pid, cmd = ""] = line.trim().split("|")
+      if (name && BROWSERS.test(name) && !/--backgroundtask|--type=|--headless/i.test(cmd)) pids.add(`${name}:${pid}`)
+    }
     resolve(pids)
   }))
 }

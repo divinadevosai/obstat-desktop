@@ -282,3 +282,18 @@ test("shells a killed Obstat left running are ended on the next start, and nothi
   assert.equal(fs.existsSync(path.join(h.root, "apps-running.json")), false)
   assert.equal(await killShell("1; rm -rf /", "win32", run), false)
 })
+
+test("on Windows, Stop also ends what an app's shell started through another shell", async () => {
+  const t = Date.parse("2026-10-20T15:53:00Z")
+  const at = (s) => new Date(t + s * 1000).toISOString()
+  // 100 is the app's shell (gone); 200 npm, 300 a second cmd, 400 vite; 500 started before the app (a reused id)
+  const list = [`200 100 ${at(1)}`, `300 200 ${at(2)}`, `400 300 ${at(3)}`, `500 100 ${at(-60)}`, `600 1 ${at(5)}`].join("\r\n")
+  const calls = []
+  const run = (cmd, args, _o, cb) => { calls.push([cmd, ...args]); cb(null, cmd === "powershell.exe" ? list : "") }
+  assert.deepEqual((await apps.leftovers([100], t, run)).sort(), [200, 300, 400])
+  assert.equal(await apps.endLeftovers([100], t, run), 3)
+  const kill = calls.find((c) => c[0] === "taskkill")
+  assert.deepEqual(kill.slice(1, 2), ["/F"])
+  assert.deepEqual(kill.filter((x) => /^\d+$/.test(x)).sort(), ["200", "300", "400"])
+  assert.deepEqual(await apps.leftovers([], t, run), [])
+})
