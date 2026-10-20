@@ -15,6 +15,7 @@ const iconsLib = require("./lib/icons")
 const viewerLib = require("./lib/viewer")
 const updatesLib = require("./lib/updates")
 const buildUi = require("./lib/buildui")
+const cppToolsLib = require("./lib/cpptools")
 const { which, withPath } = require("./lib/env")
 const fsp = require("node:fs/promises")
 const { spawn } = require("node:child_process")
@@ -237,6 +238,10 @@ app.whenReady().then(() => {
     return icons.get(mine?.installed || mine?.local ? apps.appDir(id) : null, typeof url === "string" ? url : mine?.icon || null, name)
   })
   handle("runtimes", () => runtimes.status())
+  // Microsoft's C++ tools, for apps whose packages build from source (see lib/cpptools.js)
+  const cppTools = cppToolsLib.create(home, { fetchImpl: (url) => net.fetch(url), log: (line) => home.log(line) })
+  handle("cpp-tools", () => cppTools.installed())
+  handle("cpp-tools-install", () => cppTools.install())
   handle("app-fetch", async (id) => {
     const mine = apps.get(id)
     if (mine?.local) { await apps.fetchApp(mine, () => {}); return mine }

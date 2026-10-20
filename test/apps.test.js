@@ -205,3 +205,14 @@ test("Run install runs the steps that were shown, even if the files change after
   assert.deepEqual(await a.run("x/i", "install.js", p.token), { ok: true })
   assert.equal(fs.readFileSync(path.join(dir, "out.txt"), "utf8"), "shown\n")
 })
+
+test("spots apps that call ffmpeg, without reading their installed packages", () => {
+  const { needsFfmpeg } = apps
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "obstat-ff-"))
+  fs.mkdirSync(path.join(d, "app", "env", "lib"), { recursive: true })
+  fs.writeFileSync(path.join(d, "app", "env", "lib", "x.py"), "import subprocess; subprocess.run(['ffmpeg'])")
+  fs.writeFileSync(path.join(d, "app", "main.py"), "print('hi')")
+  assert.equal(needsFfmpeg(d), false)
+  fs.writeFileSync(path.join(d, "app", "ui.py"), "out = gr.make_waveform(audio)")
+  assert.equal(needsFfmpeg(d), true)
+})

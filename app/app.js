@@ -242,10 +242,32 @@ const views = {
             try {
               const r = await ask("run", id, script, p.token)
               if (!r.ok) appendLog(id, `\nThe ${what} stopped: ${r.error}\n`)
+              // the steps run again from a fresh look, since this approval is used up
+              if (r.needsCompiler) return compilerNote(async () => { try { showPlan(await ask("preview", id, script), script) } catch (err) { fail(err) } })
             } catch (err) { appendLog(id, `\n${err.message}\n`) }
             render()
           } }),
           el("button", { class: "btn small ghost", text: "Cancel", onclick: () => { note.replaceChildren(); busy(false) } }))))
+    }
+
+    // A package had to be built on this PC and there's no C++ compiler: offer
+    // Microsoft's, then try the same thing again.
+    function compilerNote(again) {
+      const btn = el("button", { class: "btn small", text: "Install Microsoft's C++ tools", onclick: async () => {
+        btn.disabled = true
+        btn.textContent = "Installing. This takes a while…"
+        try {
+          const r = await ask("installCppTools")
+          if (r.restart) return note.replaceChildren(el("p", { class: "ok-note", text: "Installed. Restart your PC, then try again." }))
+          note.replaceChildren(el("p", { class: "ok-note", text: "Installed. Trying again…" }))
+          again()
+        } catch (err) { note.replaceChildren(el("p", { class: "card-err", text: err.message })); busy(false) }
+      } })
+      note.replaceChildren(el("div", { class: "plan" },
+        el("h2", { text: "This app needs Microsoft's C++ tools" }),
+        el("p", { class: "note", text: "One of its packages has to be built on your PC. Obstat can download Microsoft's free C++ Build Tools (a few GB) straight from Microsoft and install them. Windows asks for permission once, and every app can use them after that." }),
+        el("div", { class: "row-btns" }, btn,
+          el("button", { class: "btn small ghost", text: "Not now", onclick: () => { note.replaceChildren(); busy(false) } }))))
     }
 
     async function start(script = "start.js") {
@@ -255,6 +277,7 @@ const views = {
         const r = await ask("run", id, script)
         if (r.needsApproval) return showPlan(r.preview, script)
         if (!r.ok) appendLog(id, `\nIt stopped: ${r.error}\n`)
+        if (r.needsCompiler) return compilerNote(() => start(script))
         // it's up: show it inside Obstat, like a browser tab
         else if (r.running && current?.id === id && location.hash.startsWith("#/app/") && (await ask("app", id))?.running?.url) return go(runHash(id))
       } catch (err) { appendLog(id, `\n${err.message}\n`) }

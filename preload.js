@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld("obstat", {
   apps: call("apps"),
   app: call("app"),
   runtimes: call("runtimes"),
+  cppTools: call("cpp-tools"),
+  installCppTools: call("cpp-tools-install"),
   fetchApp: call("app-fetch"),
   preview: call("app-preview"),
   run: call("app-run"),
