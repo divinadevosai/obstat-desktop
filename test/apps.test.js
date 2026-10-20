@@ -140,3 +140,104 @@ test("app menu: run options, edit launcher, reset, copy, update and made-here ap
   assert.throws(() => a.createLocal({ name: "../x", task: "x" }), /lowercase/)
   assert.equal(await a.fetchApp(made, () => {}), a.appDir(made.id))
 })
+
+test("an unreviewed app's steps show before they first run, and again when they change", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  const dir = a.appDir("x/u")
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/u": { id: "x/u", owner: "x", name: "u", reviewed: false, installed: true } }))
+  const write = (cmd) => fs.writeFileSync(path.join(dir, "start.js"), `module.exports = { run: [{ method: "shell.run", params: { message: ["${cmd}"] } }] }`)
+  write("echo one >> out.txt")
+
+  const first = await a.run("x/u", "start.js")
+  assert.equal(first.needsApproval, true)
+  assert.deepEqual(first.preview.commands.map((c) => c.command), ["echo one >> out.txt"])
+  assert.equal(fs.existsSync(path.join(dir, "out.txt")), false)
+  await assert.rejects(a.run("x/u", "start.js", "made-up"), /out of date/)
+
+  assert.deepEqual(await a.run("x/u", "start.js", first.preview.token), { ok: true })
+  await assert.rejects(a.run("x/u", "start.js", first.preview.token), /out of date/) // a token works once
+  assert.deepEqual(await a.run("x/u", "start.js"), { ok: true }) // seen and unchanged: runs
+  assert.equal(fs.readFileSync(path.join(dir, "out.txt"), "utf8"), "one\none\n")
+
+  write("echo two >> out.txt")
+  const changed = await a.run("x/u", "start.js")
+  assert.equal(changed.needsApproval, true)
+  assert.equal(fs.readFileSync(path.join(dir, "out.txt"), "utf8"), "one\none\n")
+})
+
+test("a change to only a step's environment still counts as changed steps", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  const dir = a.appDir("x/e")
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/e": { id: "x/e", owner: "x", name: "e", reviewed: false, installed: true } }))
+  const write = (env) => fs.writeFileSync(path.join(dir, "start.js"), `module.exports = { run: [{ method: "shell.run", params: { message: ["echo hi"], env: ${JSON.stringify(env)} } }] }`)
+  write({ A: "1" })
+  const first = await a.run("x/e", "start.js")
+  assert.deepEqual(await a.run("x/e", "start.js", first.preview.token), { ok: true })
+  assert.deepEqual(await a.run("x/e", "start.js"), { ok: true })
+  write({ A: "1", PYTHONSTARTUP: "evil.py" })
+  assert.equal((await a.run("x/e", "start.js")).needsApproval, true)
+})
+
+test("a copy of an unreviewed app still shows its steps before they first run", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  fs.mkdirSync(a.appDir("x/c"), { recursive: true })
+  fs.writeFileSync(path.join(a.appDir("x/c"), "start.js"), `module.exports = { run: [{ method: "shell.run", params: { message: ["echo hi"] } }] }`)
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/c": { id: "x/c", owner: "x", name: "c", reviewed: false, installed: true } }))
+  const copy = await a.copy("x/c")
+  assert.equal((await a.run(copy.id, "start.js")).needsApproval, true)
+})
+
+test("Run install runs the steps that were shown, even if the files change after", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  const dir = a.appDir("x/i")
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/i": { id: "x/i", owner: "x", name: "i", reviewed: false } }))
+  const write = (cmd) => fs.writeFileSync(path.join(dir, "install.js"), `module.exports = (kernel) => ({ run: [{ method: "shell.run", params: { message: [${JSON.stringify(cmd)}] } }] })`)
+  write("echo shown > out.txt")
+  const p = await a.preview("x/i", "install.js")
+  write("echo hidden > out.txt")
+  assert.deepEqual(await a.run("x/i", "install.js", p.token), { ok: true })
+  assert.equal(fs.readFileSync(path.join(dir, "out.txt"), "utf8"), "shown\n")
+})
+
+test("spots apps that call ffmpeg, without reading their installed packages", () => {
+  const { needsFfmpeg } = apps
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "obstat-ff-"))
+  fs.mkdirSync(path.join(d, "app", "env", "lib"), { recursive: true })
+  fs.writeFileSync(path.join(d, "app", "env", "lib", "x.py"), "import subprocess; subprocess.run(['ffmpeg'])")
+  fs.writeFileSync(path.join(d, "app", "main.py"), "print('hi')")
+  assert.equal(needsFfmpeg(d), false)
+  fs.writeFileSync(path.join(d, "app", "ui.py"), "out = gr.make_waveform(audio)")
+  assert.equal(needsFfmpeg(d), true)
+})
+
+test("What's changed lists the app's newest commits, the launcher's and the app's own", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  const dir = a.appDir("x/w")
+  const commit = (d, msg) => {
+    fs.mkdirSync(d, { recursive: true })
+    fs.writeFileSync(path.join(d, `${msg.length}.txt`), msg)
+    if (!fs.existsSync(path.join(d, ".git"))) execFileSync("git", ["init", "-q"], { cwd: d })
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=Ada", "add", "."], { cwd: d })
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=Ada", "commit", "-qm", msg], { cwd: d })
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: d }).toString().trim()
+  }
+  commit(dir, "first launcher")
+  const head = commit(dir, "fix the start step")
+  commit(path.join(dir, "app"), "upstream: faster model loading")
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/w": { id: "x/w", url: "https://github.com/x/w.git", commit: head, installed: true } }))
+  const c = await a.changes("x/w")
+  assert.deepEqual(c.sections.map((s) => s.title), ["Launcher", "The app itself"])
+  assert.deepEqual(c.sections[0].commits.map((x) => x.message), ["fix the start step", "first launcher"])
+  assert.equal(c.sections[0].commits[0].author, "Ada")
+  assert.equal(c.sections[0].link, "https://github.com/x/w")
+  assert.equal(c.current, head)
+  assert.equal(c.sections[1].commits[0].message, "upstream: faster model loading")
+})

@@ -31,6 +31,42 @@ const appHash = (e) => `#/app/${encodeURIComponent(e.owner)}/${encodeURIComponen
 const runHash = (id) => `#/run/${encodeURIComponent(id)}`
 const stars = (n) => `★ ${(n || 0).toLocaleString("en-GB")}`
 const day = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+// "3 days ago", "2 months ago"
+function since(iso) {
+  const d = (Date.now() - new Date(iso).getTime()) / 86400000
+  if (!Number.isFinite(d)) return ""
+  const n = (x, w) => `${x} ${w}${x === 1 ? "" : "s"} ago`
+  return d < 1 ? "today" : d < 2 ? "yesterday" : d < 31 ? n(Math.floor(d), "day") : d < 365 ? n(Math.floor(d / 30.4), "month") : n(Math.floor(d / 365), "year")
+}
+
+// An app's newest commits, newest first: its updates and fixes in the repo's own words.
+function changesList(c) {
+  const box = el("div", { class: "changes" }, el("h2", { text: "What's changed" }))
+  if (!c.sections.length) {
+    box.appendChild(el("p", { class: "note", text: "No changes to show yet." }))
+    return box
+  }
+  if (c.newer) box.appendChild(el("p", { class: "ok-note", text: `${c.newer >= 30 ? "30 or more" : c.newer} newer change${c.newer === 1 ? "" : "s"} since your version. ${c.reviewed && c.reviewed !== c.current ? "Update installs the newest reviewed one." : c.reviewed ? "They haven't been reviewed yet, so your version stays." : "Update gets them."}` }))
+  for (const [i, s] of c.sections.entries()) {
+    if (c.sections.length > 1) box.appendChild(el("h3", { text: s.title }))
+    const at = c.current ? s.commits.findIndex((x) => x.sha === c.current) : -1
+    const row = (x, j) => el("li", { class: x.sha === c.current ? "mine" : i === 0 && j < at ? "new" : "" },
+      el("b", { text: x.message || "(no message)" }),
+      el("small", {},
+        [x.author, since(x.at)].filter(Boolean).join(" · "),
+        x.sha === c.current && el("span", { class: "badge ok", text: "Your version" }),
+        x.sha === c.reviewed && el("span", { class: "badge ok", text: "Reviewed" }),
+        s.link ? el("button", { class: "sha", text: x.sha.slice(0, 7), title: "See it on GitHub", onclick: () => window.obstat.openExternal(`${s.link}/commit/${x.sha}`) }) : el("code", { text: x.sha.slice(0, 7) })))
+    const list = el("ol", { class: "timeline" }, ...s.commits.slice(0, Math.max(6, at + 1)).map(row))
+    box.appendChild(list)
+    if (s.commits.length > Math.max(6, at + 1)) {
+      const shown = Math.max(6, at + 1)
+      const more = el("button", { class: "btn small ghost", text: `Show ${s.commits.length - shown} more`, onclick: () => { list.append(...s.commits.slice(shown).map((x, j) => row(x, j + shown))); more.remove() } })
+      box.appendChild(more)
+    }
+  }
+  return box
+}
 // The app's own logo when it has one (from its folder or its GitHub repo), else its first letter
 const icons = new Map()
 function mark(name, app) {
@@ -227,25 +263,47 @@ const views = {
 
     function showPlan(p, script = "install.js") {
       const risky = p.commands.filter((c) => c.risks.length)
-      const what = script === "reset.js" ? "reset" : "install"
+      const what = script === "reset.js" ? "reset" : script === "install.js" ? "install" : "start"
       note.replaceChildren(el("div", { class: "plan" },
-        el("h2", { text: what === "reset" ? "Reset steps" : "Install steps" }),
-        el("p", { class: "note", text: `Obstat will run these ${p.commands.length} command${p.commands.length === 1 ? "" : "s"} in the app's own folder.` }),
+        el("h2", { text: `${what[0].toUpperCase()}${what.slice(1)} steps` }),
+        el("p", { class: "note", text: `Obstat will run these ${p.commands.length} command${p.commands.length === 1 ? "" : "s"} in the app's own folder.${what === "start" ? " Nobody has reviewed this app, so Obstat shows its steps the first time and whenever they change." : ""}` }),
         p.unsupported.length && el("p", { class: "card-err", text: `This app uses steps Obstat can't run yet (${p.unsupported.join(", ")}), so the install will stop there.` }),
         risky.length && el("p", { class: "card-err", text: `Careful: ${risky.length} command${risky.length === 1 ? "" : "s"} ${[...new Set(risky.flatMap((c) => c.risks))].join(", ")}.` }),
         el("ol", { class: "cmds" }, ...p.commands.map((c) => el("li", { class: c.risks.length ? "risky" : "" },
           el("code", { text: c.command }),
-          (c.path !== "." || c.venv) && el("small", { text: [c.path !== "." && `in ${c.path}`, c.venv && `Python env ${c.venv}`].filter(Boolean).join(" · ") })))),
+          (c.path !== "." || c.venv || c.env) && el("small", { text: [c.path !== "." && `in ${c.path}`, c.venv && `Python env ${c.venv}`, c.env && `with ${c.env.join(", ")}`].filter(Boolean).join(" · ") })))),
         el("div", { class: "row-btns" },
-          el("button", { class: "btn small", text: `Run ${what}`, onclick: async () => {
+          el("button", { class: "btn small", text: what === "start" ? "Start it" : `Run ${what}`, onclick: async () => {
             note.replaceChildren()
             try {
-              const r = await ask("run", id, script)
+              const r = await ask("run", id, script, p.token)
               if (!r.ok) appendLog(id, `\nThe ${what} stopped: ${r.error}\n`)
+              // the steps run again from a fresh look, since this approval is used up
+              if (r.needsCompiler) return compilerNote(async () => { try { showPlan(await ask("preview", id, script), script) } catch (err) { fail(err) } })
             } catch (err) { appendLog(id, `\n${err.message}\n`) }
             render()
           } }),
           el("button", { class: "btn small ghost", text: "Cancel", onclick: () => { note.replaceChildren(); busy(false) } }))))
+    }
+
+    // A package had to be built on this PC and there's no C++ compiler: offer
+    // Microsoft's, then try the same thing again.
+    function compilerNote(again) {
+      const btn = el("button", { class: "btn small", text: "Install Microsoft's C++ tools", onclick: async () => {
+        btn.disabled = true
+        btn.textContent = "Installing. This takes a while…"
+        try {
+          const r = await ask("installCppTools")
+          if (r.restart) return note.replaceChildren(el("p", { class: "ok-note", text: "Installed. Restart your PC, then try again." }))
+          note.replaceChildren(el("p", { class: "ok-note", text: "Installed. Trying again…" }))
+          again()
+        } catch (err) { note.replaceChildren(el("p", { class: "card-err", text: err.message })); busy(false) }
+      } })
+      note.replaceChildren(el("div", { class: "plan" },
+        el("h2", { text: "This app needs Microsoft's C++ tools" }),
+        el("p", { class: "note", text: "One of its packages has to be built on your PC. Obstat can download Microsoft's free C++ Build Tools (a few GB) straight from Microsoft and install them. Windows asks for permission once, and every app can use them after that." }),
+        el("div", { class: "row-btns" }, btn,
+          el("button", { class: "btn small ghost", text: "Not now", onclick: () => { note.replaceChildren(); busy(false) } }))))
     }
 
     async function start(script = "start.js") {
@@ -253,7 +311,9 @@ const views = {
       term.textContent = ""
       try {
         const r = await ask("run", id, script)
+        if (r.needsApproval) return showPlan(r.preview, script)
         if (!r.ok) appendLog(id, `\nIt stopped: ${r.error}\n`)
+        if (r.needsCompiler) return compilerNote(() => start(script))
         // it's up: show it inside Obstat, like a browser tab
         else if (r.running && current?.id === id && location.hash.startsWith("#/app/") && (await ask("app", id))?.running?.url) return go(runHash(id))
       } catch (err) { appendLog(id, `\n${err.message}\n`) }
@@ -378,6 +438,9 @@ const views = {
       try { go(appHash(await ask("copy", id))) } catch (err) { fail(err) }
     }
 
+    const changes = el("div", { class: "changes" }, el("h2", { text: "What's changed" }), el("p", { class: "note", text: "Getting its latest updates…" }))
+    ask("changes", id).then((c) => changes.replaceWith(changesList(c))).catch((err) => changes.replaceChildren(el("h2", { text: "What's changed" }), el("p", { class: "note", text: err.message })))
+
     const menu = el("div", { class: "actions-menu" },
       ...(test ? [
         head("Sandbox test"),
@@ -441,7 +504,8 @@ const views = {
           note,
           el("div", { class: "term" },
             el("div", { class: "term-h" }, el("i"), el("i"), el("i"), el("span", { text: "log" })),
-            logBody))),
+            logBody),
+          changes)),
     ]
   },
 
@@ -740,7 +804,8 @@ function appTile(a) {
         ev.stopPropagation()
         const b = ev.currentTarget
         b.disabled = true; b.textContent = "Starting…"
-        await ask("run", a.id, "start.js").catch(() => {})
+        const r = await ask("run", a.id, "start.js").catch(() => null)
+        if (r?.needsApproval) return go(appHash(a))
         if (location.hash.startsWith("#/home") || location.hash === "") render()
       } })
       : null

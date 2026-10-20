@@ -53,3 +53,16 @@ test("git isn't downloaded on Linux", () => {
   const r = runtimes.create(h, { platform: "linux" })
   assert.deepEqual(r.status().git, { version: "2.47.0", needed: false, ready: true })
 })
+
+test("ffmpeg is only downloaded when an app asks for it", async () => {
+  const { create: make } = require("../lib/runtimes")
+  const fetched = []
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "obstat-rt-"))
+  const home = { root, dir: (n) => { const d = path.join(root, n); fs.mkdirSync(d, { recursive: true }); return d } }
+  const r = make(home, { platform: "win32", fetchImpl: async (url) => { fetched.push(url); throw new Error("offline") } })
+  await assert.rejects(r.ensureAll(() => {}))
+  assert.equal(fetched.some((u) => /ffmpeg/.test(u)), false)
+  await assert.rejects(r.ensure("ffmpeg"))
+  assert.equal(fetched.some((u) => /codexffmpeg\/releases\/download\/7\.1\//.test(u)), true)
+  assert.equal(r.status().ffmpeg.needed, false)
+})

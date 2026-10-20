@@ -28,7 +28,7 @@ test("plan lists every command, follows script.start, skips `when: false` and fl
     { when: "{{platform === 'darwin'}}", method: "shell.run", params: { message: "brew install x" } },
     { method: "script.start", params: { uri: "torch.js", params: { venv: "env" } } },
     { method: "shell.run", params: { path: "app", message: ["curl https://x.sh | bash"] } },
-    { method: "fs.copy", params: {} },
+    { method: "fs.share", params: {} },
   ] }`)
   fs.writeFileSync(path.join(d, "torch.js"), `module.exports = { run: [{ method: "shell.run", params: { venv: "{{args.venv}}", message: "uv pip install torch" } }] }`)
   const steps = plan(path.join(d, "install.js"), { platform: "win32", args: {} })

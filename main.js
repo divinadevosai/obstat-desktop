@@ -15,6 +15,7 @@ const iconsLib = require("./lib/icons")
 const viewerLib = require("./lib/viewer")
 const updatesLib = require("./lib/updates")
 const buildUi = require("./lib/buildui")
+const cppToolsLib = require("./lib/cpptools")
 const { which, withPath } = require("./lib/env")
 const fsp = require("node:fs/promises")
 const { spawn } = require("node:child_process")
@@ -231,12 +232,52 @@ app.whenReady().then(() => {
   }
   handle("apps", () => apps.list())
   handle("app", (id) => apps.get(id))
+  // What's changed: GitHub's newest commits for the app's repo (kept for an hour
+  // so browsing doesn't use up GitHub's allowance), falling back to the app's own
+  // folder offline. For an installed app, `newer` counts the commits after the
+  // installed one; for a reviewed app, `reviewed` marks the reviewed commit.
+  const changesCache = new Map()
+  async function githubCommits(repo) {
+    const hit = changesCache.get(repo)
+    if (hit && Date.now() - hit.at < 3600000) return hit.value
+    const res = await net.fetch(`https://api.github.com/repos/${repo}/commits?per_page=30`, { headers: { accept: "application/vnd.github+json" } })
+    if (!res.ok) throw new Error(res.status === 403 || res.status === 429 ? "GitHub is busy right now. Try again in a bit." : "Couldn't get this app's changes from GitHub.")
+    const list = await res.json()
+    const value = (Array.isArray(list) ? list : []).filter((c) => c && /^[0-9a-f]{40}$/.test(c.sha)).map((c) => ({
+      sha: c.sha, author: String(c.commit?.author?.name || "").slice(0, 80), at: String(c.commit?.author?.date || ""), message: String(c.commit?.message || "").split("\n")[0].slice(0, 200),
+    }))
+    changesCache.set(repo, { at: Date.now(), value })
+    return value
+  }
+  handle("app-changes", async (id) => {
+    if (typeof id !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(id)) throw new Error("That isn't an app id.")
+    const mine = apps.get(id)
+    const reviewed = (await api.list(net.fetch).catch(() => [])).find((r) => r.id.toLowerCase() === id.toLowerCase())
+    const reviewedSha = reviewed?.reviewedSha && /^[0-9a-f]{40}$/.test(reviewed.reviewedSha) ? reviewed.reviewedSha : null
+    const local = mine && (mine.installed || mine.local) ? await apps.changes(id) : null
+    const repo = mine?.local ? null : (/github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(String(mine?.url || "")) || [null, id])[1]
+    let remote = null
+    if (repo) try { remote = await githubCommits(repo) } catch (err) { if (!local) throw err }
+    const out = local || { sections: [], current: null, reviewed: null }
+    out.reviewed = reviewedSha || out.reviewed
+    if (remote && remote.length) {
+      out.sections = [{ title: out.sections.length > 1 ? "Launcher" : "Code", link: `https://github.com/${repo}`, commits: remote }, ...out.sections.slice(1)]
+    }
+    const first = out.sections[0]?.commits || []
+    const at = out.current ? first.findIndex((c) => c.sha === out.current) : -1
+    out.newer = out.current && first.length ? (at < 0 ? first.length : at) : 0
+    return out
+  })
   handle("app-icon", (id, url) => {
     const mine = typeof id === "string" && apps.get(id)
     const name = mine?.name || (typeof id === "string" ? id.split("/").pop() : null)
     return icons.get(mine?.installed || mine?.local ? apps.appDir(id) : null, typeof url === "string" ? url : mine?.icon || null, name)
   })
   handle("runtimes", () => runtimes.status())
+  // Microsoft's C++ tools, for apps whose packages build from source (see lib/cpptools.js)
+  const cppTools = cppToolsLib.create(home, { fetchImpl: (url) => net.fetch(url), log: (line) => home.log(line) })
+  handle("cpp-tools", () => cppTools.installed())
+  handle("cpp-tools-install", () => cppTools.install())
   handle("app-fetch", async (id) => {
     const mine = apps.get(id)
     if (mine?.local) { await apps.fetchApp(mine, () => {}); return mine }
@@ -265,9 +306,11 @@ app.whenReady().then(() => {
     return apps.get(id)
   })
   handle("app-preview", (id, script) => apps.preview(id, script))
-  handle("app-run", async (id, script) => {
+  handle("app-run", async (id, script, token) => {
     home.log(`${id}: ${script}`)
-    return apps.run(id, script)
+    // install and reset steps only run as the plan people were shown
+    if ((script === "install.js" || script === "reset.js") && typeof token !== "string") throw new Error("Look at the steps first, then run them from there.")
+    return apps.run(id, script, typeof token === "string" ? token : null)
   })
   handle("app-stop", (id) => apps.stop(id))
   // Open a running app inside Obstat. The window names the app; the address
