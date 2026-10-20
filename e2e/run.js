@@ -52,18 +52,25 @@ const fail = (msg) => { problems.push(msg); say(`FAIL: ${msg}`) }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // Every browser window running on this PC, so the test can tell if the app opened one.
-// Firefox's scheduled background updater (firefox.exe --backgroundtask) isn't a window.
+// Browsers Windows itself starts (Firefox's scheduled background updater, run by the
+// Task Scheduler's svchost) aren't the app's doing, and don't count.
 const BROWSERS = /^(msedge|chrome|firefox|brave|iexplore|opera)\.exe$/i
-const BROWSER_LIST = "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(msedge|chrome|firefox|brave|iexplore|opera)\\.exe$' } | ForEach-Object { '{0}|{1}|{2}' -f $_.Name, $_.ProcessId, $_.CommandLine }"
+const SYSTEM = /^(svchost|taskhostw|services|wininit|sihost)\.exe$/i
+const PROCESSES = "Get-CimInstance Win32_Process | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.Name, $_.ProcessId, $_.ParentProcessId, $_.CommandLine }"
 function browsers() {
-  if (process.platform !== "win32") return Promise.resolve(new Set())
-  return new Promise((resolve) => execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", BROWSER_LIST], { windowsHide: true, maxBuffer: 1 << 24 }, (err, out) => {
-    const pids = new Set()
-    if (!err) for (const line of String(out).split(/\r?\n/)) {
-      const [name, pid, cmd = ""] = line.trim().split("|")
-      if (name && BROWSERS.test(name) && !/--backgroundtask|--type=|--headless/i.test(cmd)) pids.add(`${name}:${pid}`)
+  if (process.platform !== "win32") return Promise.resolve(new Map())
+  return new Promise((resolve) => execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", PROCESSES], { windowsHide: true, maxBuffer: 1 << 25 }, (err, out) => {
+    const found = new Map()
+    if (err) return resolve(found)
+    const rows = String(out).split(/\r?\n/).map((l) => l.trim().split("|")).filter((r) => r.length >= 3)
+    const names = new Map(rows.map(([name, pid]) => [pid, name]))
+    for (const [name, pid, parent, ...cmd] of rows) {
+      const line = cmd.join("|")
+      if (!BROWSERS.test(name) || /--backgroundtask|--type=|-contentproc|--headless/i.test(line)) continue
+      if (SYSTEM.test(names.get(parent) || "")) continue
+      found.set(`${name}:${pid}`, `${name} ${line}`.slice(0, 300))
     }
-    resolve(pids)
+    resolve(found)
   }))
 }
 
@@ -145,8 +152,8 @@ async function main() {
 
   // let the app settle, then see whether it opened a browser of its own
   await wait(5000)
-  const opened = [...(await browsers())].filter((p) => !before.has(p))
-  if (opened.length) fail(`a browser started while the app ran (${opened.join(", ")}): the app opened the system browser instead of staying in Obstat`)
+  const opened = [...(await browsers())].filter(([p]) => !before.has(p)).map(([, line]) => line)
+  if (opened.length) fail(`a browser started while the app ran (${opened.join("; ")}): the app opened the system browser instead of staying in Obstat`)
   const outside = events.filter((e) => e.type === "open" && !api.isLocalUrl(e.url))
   if (outside.length) fail(`the app asked to open pages on other sites: ${outside.map((e) => e.url).join(", ")}`)
 
