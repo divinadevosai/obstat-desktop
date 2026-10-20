@@ -1,0 +1,2 @@
+# Skills are copied as they are into agents' folders; keep them LF on Windows checkouts too
+skills/** text eol=lf
