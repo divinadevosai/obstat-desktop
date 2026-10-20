@@ -166,3 +166,18 @@ test("an unreviewed app's steps show before they first run, and again when they 
   assert.equal(changed.needsApproval, true)
   assert.equal(fs.readFileSync(path.join(dir, "out.txt"), "utf8"), "one\none\n")
 })
+
+test("a change to only a step's environment still counts as changed steps", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  const dir = a.appDir("x/e")
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ "x/e": { id: "x/e", owner: "x", name: "e", reviewed: false, installed: true } }))
+  const write = (env) => fs.writeFileSync(path.join(dir, "start.js"), `module.exports = { run: [{ method: "shell.run", params: { message: ["echo hi"], env: ${JSON.stringify(env)} } }] }`)
+  write({ A: "1" })
+  const first = await a.run("x/e", "start.js")
+  assert.deepEqual(await a.run("x/e", "start.js", first.preview.token), { ok: true })
+  assert.deepEqual(await a.run("x/e", "start.js"), { ok: true })
+  write({ A: "1", PYTHONSTARTUP: "evil.py" })
+  assert.equal((await a.run("x/e", "start.js")).needsApproval, true)
+})

@@ -235,7 +235,7 @@ const views = {
         risky.length && el("p", { class: "card-err", text: `Careful: ${risky.length} command${risky.length === 1 ? "" : "s"} ${[...new Set(risky.flatMap((c) => c.risks))].join(", ")}.` }),
         el("ol", { class: "cmds" }, ...p.commands.map((c) => el("li", { class: c.risks.length ? "risky" : "" },
           el("code", { text: c.command }),
-          (c.path !== "." || c.venv) && el("small", { text: [c.path !== "." && `in ${c.path}`, c.venv && `Python env ${c.venv}`].filter(Boolean).join(" · ") })))),
+          (c.path !== "." || c.venv || c.env) && el("small", { text: [c.path !== "." && `in ${c.path}`, c.venv && `Python env ${c.venv}`, c.env && `with ${c.env.join(", ")}`].filter(Boolean).join(" · ") })))),
         el("div", { class: "row-btns" },
           el("button", { class: "btn small", text: what === "start" ? "Start it" : `Run ${what}`, onclick: async () => {
             note.replaceChildren()

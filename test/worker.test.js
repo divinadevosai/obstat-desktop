@@ -25,7 +25,7 @@ function app(files) {
 }
 
 // runs one script and collects its log, local values and how it ended
-function run(dir, script, ctx = {}, env = {}, approved = null) {
+function run(dir, script, ctx = {}, env = {}, approved = null, more = {}) {
   return new Promise((resolve) => {
     const child = fork(WORKER, [], { stdio: ["ignore", "ignore", "ignore", "ipc"] })
     const out = { log: "", local: {}, end: null }
@@ -36,7 +36,7 @@ function run(dir, script, ctx = {}, env = {}, approved = null) {
       else if (m.type === "done" || m.type === "error") { out.end = m.type; out.error = m.message }
     })
     child.on("exit", () => { clearTimeout(timer); resolve(out) })
-    child.send({ type: "run", job: { appDir: dir, script, env, paths: [], python: "python3", ctx: { platform: process.platform, gpu: "none", args: {}, input: {}, port: 42020, env: {}, ...ctx }, approved } })
+    child.send({ type: "run", job: { appDir: dir, script, env, paths: [], python: "python3", ctx: { platform: process.platform, gpu: "none", args: {}, input: {}, port: 42020, env: {}, ...ctx }, approved, ...more } })
   })
 }
 const steps = (run) => `module.exports = { run: ${JSON.stringify(run)} }`
@@ -103,16 +103,20 @@ test("proxy.start and proxy.stop are skipped with a note", async () => {
   assert.match(r.log, /Skipped Pinokio's sharing step/)
 })
 
-test("hf.download runs the app venv's hf with huggingface.co as the only endpoint", { skip: !posix }, async () => {
+test("hf.download runs Obstat's own hf, never the app's, with huggingface.co as the only endpoint", { skip: !posix }, async () => {
   const a = app({ "install.js": steps([{ method: "hf.download", params: { path: "app", _: ["org/model", "w.bin"], "local-dir": "models/m" } }]) })
-  // a stand-in hf that prints what it was asked
-  fs.mkdirSync(path.join(a.dir, "app", "env", "bin"), { recursive: true })
-  const hf = path.join(a.dir, "app", "env", "bin", "hf")
-  fs.writeFileSync(hf, `#!/bin/sh\necho "hf args: $*"\necho "endpoint: $HF_ENDPOINT"\n`)
-  fs.chmodSync(hf, 0o755)
+  const stub = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `#!/bin/sh\n${text}\n`); fs.chmodSync(file, 0o755) }
+  // the app's own env has an hf of its own, which must not run
+  stub(path.join(a.dir, "app", "env", "bin", "hf"), `echo "APP HF"`)
+  // stand-ins for Obstat's download tool: python (pip) and hf that print what they were asked
+  const tool = path.join(a.top, "cache", "hf-env")
+  stub(path.join(tool, "bin", "python"), `echo "pip: $*"`)
+  stub(path.join(tool, "bin", "hf"), `echo "hf args: $*"\necho "endpoint: $HF_ENDPOINT"`)
   // even when something set another endpoint
-  const r = await run(a.dir, "install.js", {}, { HF_ENDPOINT: "https://evil.example" })
+  const r = await run(a.dir, "install.js", {}, { HF_ENDPOINT: "https://evil.example" }, null, { hfEnv: tool })
   assert.equal(r.end, "done", r.error)
+  assert.doesNotMatch(r.log, /APP HF/)
+  assert.match(r.log, /pip: -m pip install --quiet huggingface_hub>=0\.34/)
   assert.match(r.log, /hf args: download org\/model w\.bin --local-dir models\/m/)
   assert.match(r.log, /endpoint: https:\/\/huggingface\.co\n/)
 })
