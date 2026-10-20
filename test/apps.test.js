@@ -297,3 +297,23 @@ test("on Windows, Stop also ends what an app's shell started through another she
   assert.deepEqual(kill.filter((x) => /^\d+$/.test(x)).sort(), ["200", "300", "400"])
   assert.deepEqual(await apps.leftovers([], t, run), [])
 })
+
+test("on Windows, a copy of the app left holding its port is found by its folder, and nothing else is", async () => {
+  const dir = "C:\\Users\\me\\obstat\\apps\\divinadevosai-plazai"
+  const out = [
+    `4120\tC:\\Users\\me\\obstat\\runtimes\\node\\node.exe\t"node.exe" "C:\\Users\\me\\obstat\\apps\\divinadevosai-plazai\\node_modules\\vite\\bin\\vite.js"`,
+    `5000\tC:\\Users\\me\\obstat\\apps\\divinadevosai-plazai\\env\\Scripts\\python.exe\tpython app.py`,
+    `6000\tC:\\Program Files\\Other\\other.exe\tother.exe --dir C:\\Users\\me\\obstat\\apps\\divinadevosai-plazai-two\\x`,
+    `4\tSystem\t`,
+  ].join("\r\n")
+  const calls = []
+  const run = (cmd, args, _o, cb) => { calls.push([cmd, ...args]); cb(null, cmd === "powershell.exe" ? out : "") }
+  assert.deepEqual((await apps.portOwners(5173, dir, run)).sort(), [4120, 5000])
+  assert.match(calls[0][4], /-LocalPort 5173 /)
+  assert.equal(await apps.endPortOwners(5173, dir, run), 2)
+  assert.deepEqual(calls.find((c) => c[0] === "taskkill"), ["taskkill", "/F", "/T", "/PID", "4120", "/PID", "5000"])
+  calls.length = 0
+  assert.deepEqual(await apps.portOwners("5173; Stop-Computer", dir, run), [])
+  assert.deepEqual(await apps.portOwners(70000, dir, run), [])
+  assert.equal(calls.length, 0)
+})
