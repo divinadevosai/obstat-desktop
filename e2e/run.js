@@ -170,10 +170,13 @@ async function main() {
     const holder = path.join(dir, "obstat-e2e-holder.js")
     fs.writeFileSync(holder, `require("node:http").createServer((q, r) => r.end("old copy")).listen(${port}, "127.0.0.1")\n`)
     // its command line names a file in the app's folder, as a real leftover's does
-    const old = require("node:child_process").spawn(process.execPath, [holder], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, detached: true, stdio: "ignore", windowsHide: true })
+    const holderLog = fs.openSync(path.join(OUT, "holder.log"), "w")
+    const old = require("node:child_process").spawn(process.execPath, [holder], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, detached: true, stdio: ["ignore", holderLog, holderLog], windowsHide: true })
+    old.on("error", (e) => say(`stand-in old copy: ${e.message}`))
+    old.on("exit", (code) => say(`stand-in old copy exited (${code}): ${fs.readFileSync(path.join(OUT, "holder.log"), "utf8").slice(-500)}`))
     old.unref()
-    await wait(2000)
-    if (!(await listening(url))) fail(`the stand-in old copy didn't start on port ${port}`)
+    for (let i = 0; i < 30 && !(await listening(url)); i++) await wait(500)
+    if (!(await listening(url))) { fail(`the stand-in old copy didn't start on port ${port}`); return page }
     const again = await runPlanned(script)
     if (!again.running) fail("the app didn't start again while an old copy held its port")
     else if (!events.some((e) => e.type === "log" && /A copy of this app from before was still using port/.test(e.text))) fail("Obstat didn't say it ended the old copy")
