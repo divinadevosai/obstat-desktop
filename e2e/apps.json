@@ -7,7 +7,6 @@
     { "id": "HKUDS/nanobot", "minutes": 30 },
     { "id": "NousResearch/hermes-agent", "minutes": 35 },
     { "id": "open-webui/open-webui", "minutes": 50 },
-    { "id": "pinokiofactory/bolt", "minutes": 45 },
     { "id": "pinokiofactory/llamafactory", "minutes": 45 },
     { "id": "pinokiofactory/kokoro-tts", "minutes": 45 },
     { "id": "pinokiofactory/RMBG-2-Studio", "minutes": 45 },
@@ -45,6 +44,7 @@
     "pinokiofactory/audiocraft_plus": "needs an NVIDIA graphics card (imports xformers, which only the NVIDIA install has)",
     "pinokiofactory/MMAudio": "loads several GB of models when it starts; very slow without an NVIDIA graphics card",
     "pinokiofactory/cogstudio": "needs an NVIDIA graphics card",
+    "pinokiofactory/bolt": "taken off the reviewed list: with no lockfile npm installs a newer react-icons that lacks an icon it imports, so its page is blank",
     "pinokiofactory/whisper-webui": "on Windows it needs an NVIDIA graphics card: without one its own steps install torch 2.7.0 but leave a newer torchaudio, which can't load"
   }
 }
