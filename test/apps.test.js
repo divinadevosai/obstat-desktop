@@ -262,3 +262,20 @@ test("an app is busy (and can be stopped) while Obstat is still downloading ffmp
   release()
   assert.deepEqual(await first, { ok: false, error: "Stopped." })
 })
+
+test("shells a killed Obstat left running are ended on the next start, and nothing else", async () => {
+  const { killShell } = apps
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const calls = []
+  const run = (cmd, args, _o, cb) => {
+    calls.push([cmd, ...args])
+    if (cmd === "tasklist") cb(null, args[1] === "PID eq 111" ? '"cmd.exe","111","Console","1","4,000 K"' : '"chrome.exe","222","Console","1","9,000 K"')
+    else cb(null, "")
+  }
+  fs.writeFileSync(path.join(h.root, "apps-running.json"), JSON.stringify({ "a/b": [111, 222] }))
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  assert.equal(await a.cleanup("win32", run), 1)
+  assert.deepEqual(calls.filter((c) => c[0] === "taskkill"), [["taskkill", "/pid", "111", "/T", "/F"]])
+  assert.equal(fs.existsSync(path.join(h.root, "apps-running.json")), false)
+  assert.equal(await killShell("1; rm -rf /", "win32", run), false)
+})

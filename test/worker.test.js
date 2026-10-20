@@ -32,6 +32,7 @@ function run(dir, script, ctx = {}, env = {}, approved = null, more = {}) {
     const timer = setTimeout(() => { child.kill(); resolve({ ...out, end: "timeout" }) }, 20000)
     child.on("message", (m) => {
       if (m.type === "log") out.log += m.text
+      else if (m.type === "open") (out.opened ||= []).push(m.url)
       else if (m.type === "local") out.local[m.key] = m.value
       else if (m.type === "done" || m.type === "error") { out.end = m.type; out.error = m.message }
     })
@@ -197,4 +198,17 @@ test("an approved run won't start a script the plan didn't read", async () => {
   const r = await run(a.dir, "install.js", {}, {}, viaIpc(approved))
   assert.equal(r.end, "error")
   assert.match(r.error, /wasn't in the steps you approved/)
+})
+
+test("a placeholder address isn't taken for the app's address, and the app's \"open the browser\" opens it in Obstat", { skip: !posix }, async () => {
+  const { dir } = app({
+    "start.js": `module.exports = { run: [
+      { method: "shell.run", params: { message: ["echo 'Visit http://ip:port for Web UI'", "python3 -c \\"import webbrowser; webbrowser.open('http://127.0.0.1:7860/')\\"", "echo 'Running on http://127.0.0.1:7860'"], on: [{ event: "/http:\\\\/\\\\/\\\\S+/", done: true }] } },
+      { method: "local.set", params: { url: "{{input.event[0]}}" } },
+    ] }`,
+  })
+  const out = await run(dir, "start.js")
+  assert.equal(out.end, "done", out.log)
+  assert.equal(out.local.url, "http://127.0.0.1:7860/")
+  assert.deepEqual(out.opened, ["http://127.0.0.1:7860/"])
 })
