@@ -13,8 +13,11 @@ Each file exports `{ run: [ steps ] }`. `start.js` adds `daemon: true` so the ap
 - `shell.run` with `params.message` (one command or a list), optional `path` (folder inside the app), `venv` (a folder name: Obstat creates a Python virtual environment there and runs inside it), `env` (extra variables) and `on` (a list of `{ event: "/regex/", done: true }`: the step finishes when the output matches)
 - `local.set` to remember a value, like the app's `url`
 - `script.start` to run another script in the repo
-- `fs.download`, `input`, `notify`, `web.open`
-Templates go in `{{ }}`: `{{port}}` (a free port), `{{platform}}` (`win32`, `darwin`, `linux`), `{{gpu}}` (`nvidia` or `none`), and `{{input.event[1]}}` (the first group of the last `on` match). A step can have `when: "{{platform === 'win32'}}"`.
+- `fs.download`, `fs.copy` (both paths inside the app), `hf.download` (`{ _: ["org/model"], "local-dir": "models" }`), `jump`, `input`, `notify`, `web.open`
+- `proxy.start`/`proxy.stop` are skipped: Obstat keeps apps on this PC.
+Templates go in `{{ }}`: `{{port}}` (a free port), `{{platform}}` (`win32`, `darwin`, `linux`), `{{gpu}}` (`nvidia` or `none`), `{{kernel.gpu_model}}` (the NVIDIA card's name), `{{cwd}}`, `{{exists('app')}}`, `{{path.resolve(cwd, 'app')}}`, `{{self.…}}` (the script itself) and `{{input.event[1]}}` (the first group of the last `on` match). A step can have `when: "{{platform === 'win32'}}"`.
+
+A script may also be a function of kernel, `module.exports = async (kernel) => ({ run: [...] })`, and may `require` .js or .json files inside the app (like `./config.js`). `kernel` has `platform`, `arch`, `gpu`, `gpu_model`, `gpus`, `port()`, `path()` and `exists()`; nothing else from Node is available.
 
 ## A typical Python web app
 
