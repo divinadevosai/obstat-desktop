@@ -72,6 +72,8 @@ const START = "app://obstat/index.html"
 
 // The window's files are served from app://obstat/, so /fonts/… paths work like on the site.
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true } }])
+// apps that draw with WebGL still show on PCs whose graphics driver Chromium won't use
+viewerLib.useSoftwareWebGL(app)
 
 if (!app.requestSingleInstanceLock()) app.quit()
 
@@ -402,8 +404,11 @@ app.whenReady().then(() => {
   createWindow()
   updates.start()
 
+  // End apps a previous Obstat left running (so they don't hold their ports), then
   // Autolaunch: start the apps that asked to start with Obstat
-  for (const a of apps.list()) if (a.installed && a.autostart && a.scripts.includes("start.js")) apps.run(a.id, "start.js").catch(() => {})
+  apps.cleanup().then((n) => { if (n) home.log(`ended ${n} app process${n > 1 ? "es" : ""} left from last time`) }).catch(() => {}).then(() => {
+    for (const a of apps.list()) if (a.installed && a.autostart && a.scripts.includes("start.js")) apps.run(a.id, "start.js").catch(() => {})
+  })
   if (home.prefs().agentLink) control.start().catch((e) => home.log(`control link: ${e.message}`))
 })
 

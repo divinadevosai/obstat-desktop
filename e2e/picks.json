@@ -1,0 +1,138 @@
+[
+  {
+    "id": "divinadevosai/plazai",
+    "sha": "ac3dae6d442665ae77d8e6c5b95267f99e86b2dc",
+    "scripts": {
+      "install.js": "module.exports = {\n  run: [\n    { method: \"shell.run\", params: { message: [\"npm install\"] } },\n  ],\n}\n",
+      "start.js": "module.exports = {\n  daemon: true,\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        env: { NO_COLOR: \"1\", FORCE_COLOR: \"0\" },\n        message: [\"npm run dev\"],\n        on: [{ event: \"/(http:\\\\/\\\\/127\\\\.0\\\\.0\\\\.1:[0-9]+)/\", done: true }],\n      },\n    },\n    { method: \"local.set\", params: { url: \"{{input.event[1]}}\" } },\n  ],\n}\n"
+    }
+  },
+  {
+    "id": "divinadevosai/socialcleanup",
+    "sha": "45b0fa5e5fb91370ee0383c160e7fb8f513e15dd",
+    "scripts": {
+      "install.js": "module.exports = {\n  run: [\n    { method: \"shell.run\", params: { message: [\"echo Social Cleanup is downloaded. Press Start to add it to your browser.\"] } },\n  ],\n}\n",
+      "start.js": "module.exports = {\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        message: [\n          \"echo Social Cleanup is a browser extension. To add it to Edge or Chrome:\",\n          \"echo 1. On the extensions page, turn on Developer mode.\",\n          \"echo 2. Click Load unpacked and choose the folder that just opened.\",\n          \"echo 3. Pin Social Cleanup from the puzzle-piece button in the toolbar.\",\n        ],\n      },\n    },\n    { method: \"shell.run\", when: \"{{platform === 'win32'}}\", params: { message: [\"start \\\"\\\" .\", \"start msedge edge://extensions/\"] } },\n  ],\n}\n"
+    }
+  },
+  {
+    "id": "pinokiofactory/z-image-turbo",
+    "sha": "54899fdb5c023072de43c8b91ad2b0f0bee5b5c4"
+  },
+  {
+    "id": "pinokiofactory/applio",
+    "sha": "ac636072eff0d3bab671531ef66b05c82e6947ee"
+  },
+  {
+    "id": "pinokiofactory/whisper-webui",
+    "sha": "2236c90e81ec9b1ac7f5f21a06cbe301494507fa"
+  },
+  {
+    "id": "pinokiofactory/kokoro-tts",
+    "sha": "491a369bdca03b320586bd230f1c819562c03558"
+  },
+  {
+    "id": "pinokiofactory/e2-f5-tts",
+    "sha": "8a1392b1785a275bffdf6cbcb1d2c4b0396e466f"
+  },
+  {
+    "id": "pinokiofactory/dia",
+    "sha": "17e1912e77363efc198d52a5ae813caaa8d3da90"
+  },
+  {
+    "id": "pinokiofactory/ace-step",
+    "sha": "8cf2fac2765b1383e6d078b399acc3e38374949e"
+  },
+  {
+    "id": "pinokiofactory/flux-webui",
+    "sha": "62d2f5692da1e0aaf776c3dceef0a720a6a24bb6"
+  },
+  {
+    "id": "pinokiofactory/invoke",
+    "sha": "67ac5a161a265badb1ff73d46c41f762c16bff35"
+  },
+  {
+    "id": "pinokiofactory/OmniGen",
+    "sha": "07de8c2c3944d3852bcab55d2f2c4d74bd245532"
+  },
+  {
+    "id": "pinokiofactory/cogvideo",
+    "sha": "9e2a18626426cbeb7e84be537d98e9082de8fe97"
+  },
+  {
+    "id": "pinokiofactory/diffusers-image-fill",
+    "sha": "a8b6497483d956df7ca1ffc882bf29af03476a26"
+  },
+  {
+    "id": "pinokiofactory/clarity-refiners-ui",
+    "sha": "a632fb6b948fa6b1a55d816982655d6dc8ed995e"
+  },
+  {
+    "id": "pinokiofactory/pyramidflow",
+    "sha": "6ae7e61806478b430473c2a6ce9866525e3cd1a2"
+  },
+  {
+    "id": "pinokiofactory/RMBG-2-Studio",
+    "sha": "a2c3a0d0f1618c74c115d3221eb665bab5e8df10"
+  },
+  {
+    "id": "pinokiofactory/Allegro-txt2vid-install",
+    "sha": "6000ff1e395f6238eaa89e68b45a571e84d324e1"
+  },
+  {
+    "id": "pinokiofactory/audiocraft_plus",
+    "sha": "a8e0d2731e8dbb7185a4a0ffd53b495d003586ab"
+  },
+  {
+    "id": "pinokiofactory/MMAudio",
+    "sha": "301b075421ae40d86dded8f5c36c64f65af89bfb"
+  },
+  {
+    "id": "pinokiofactory/cogstudio",
+    "sha": "7dfb014a636513c5b42de070c43e285c9bf7cce7"
+  },
+  {
+    "id": "pinokiofactory/llamafactory",
+    "sha": "e299b25b26f48bb6ef96a670c2da402f0e328441"
+  },
+  {
+    "id": "NousResearch/hermes-agent",
+    "sha": "cc6b1f299bd3a7c0309f003d97dc32014e71fa80",
+    "scripts": {
+      "install.js": "module.exports = {\n  run: [\n    // Python 3.14 (Hermes needs it) is downloaded by uv into .python inside the app folder;\n    // dependencies come from the repo's hash-pinned uv.lock.\n    {\n      method: \"shell.run\",\n      params: {\n        env: { UV_PYTHON_INSTALL_DIR: \".python\", UV_CACHE_DIR: \".uv-cache\", UV_PROJECT_ENVIRONMENT: \"env\", UV_NO_CONFIG: \"1\" },\n        message: [\"uv sync --frozen --python 3.14\"],\n      },\n    },\n    // Web dashboard + the terminal chat it embeds (built once, served by Python).\n    {\n      method: \"shell.run\",\n      params: {\n        env: { npm_config_cache: \".npm-cache\" },\n        message: [\n          \"npm install --workspace web --workspace ui-tui --no-audit --no-fund\",\n          \"npm run build -w web\",\n          \"npm run build -w ui-tui\",\n        ],\n      },\n    },\n  ],\n}\n",
+      "start.js": "module.exports = {\n  daemon: true,\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        venv: \"env\",\n        env: { NO_COLOR: \"1\", FORCE_COLOR: \"0\" },\n        message: [\n          // keep all Hermes data (config, keys, sessions, memories) in <app>/data, not ~/.hermes\n          \"{{platform === 'win32' ? 'set \\\"HERMES_HOME=%CD%\\\\\\\\data\\\"' : 'export HERMES_HOME=\\\"$PWD/data\\\"'}}\",\n          \"hermes dashboard --host 127.0.0.1 --port {{port}} --no-open --skip-build\",\n        ],\n        on: [{ event: \"/(http:\\\\/\\\\/127\\\\.0\\\\.0\\\\.1:[0-9]+)/\", done: true }],\n      },\n    },\n    { method: \"local.set\", params: { url: \"{{input.event[1]}}\" } },\n  ],\n}\n"
+    }
+  },
+  {
+    "id": "openclaw/openclaw",
+    "sha": "2a2d38a7739cde83968e890601557de32ea6b349",
+    "scripts": {
+      "install.js": "// OpenClaw needs Node 24 (Obstat ships 22), so a private Node 24 comes from the npm\n// registry into runtime/, then OpenClaw 2026.10.5 (the version of the reviewed commit).\nconst os = require(\"os\")\nconst win = os.platform() === \"win32\"\nconst NODE_PKG = win ? \"node-win-x64\" : os.platform() === \"darwin\" ? (os.arch() === \"arm64\" ? \"node-darwin-arm64\" : \"node-darwin-x64\") : \"node-linux-x64\"\nconst USE_NODE24 = win ? `set \"PATH=%CD%\\\\node_modules\\\\${NODE_PKG}\\\\bin;%PATH%\"` : `export PATH=\"$PWD/node_modules/${NODE_PKG}/bin:$PATH\"`\nconst DATA_HOME = win ? `set \"OPENCLAW_HOME=%CD%\\\\..\\\\data\"` : `export OPENCLAW_HOME=\"$PWD/../data\"`\nconst LOG_FILE = win ? `\"%CD%\\\\..\\\\data\\\\logs\\\\openclaw.log\"` : `\"$PWD/../data/logs/openclaw.log\"`\nconst OC = \"node node_modules/openclaw/openclaw.mjs\"\nconst ENV = { npm_config_cache: \".npm-cache\", NO_COLOR: \"1\", OPENCLAW_TELEMETRY: \"0\", OPENCLAW_NO_AUTO_UPDATE: \"1\", OPENCLAW_DISABLE_BONJOUR: \"1\" }\nmodule.exports = {\n  run: [\n    { method: \"shell.run\", params: { path: \"runtime\", env: ENV, message: [\n      \"npm init -y\",\n      `npm install --no-audit --no-fund --save-exact ${NODE_PKG}@24.22.0`,\n    ] } },\n    { method: \"shell.run\", params: { path: \"runtime\", env: ENV, message: [\n      USE_NODE24,\n      \"npm install --no-audit --no-fund --save-exact openclaw@2026.10.5\",\n    ] } },\n    // Local-only gateway config, kept in <app>/data/.openclaw (not ~/.openclaw); logs in <app>/data/logs.\n    { method: \"shell.run\", params: { path: \"runtime\", env: ENV, message: [\n      USE_NODE24,\n      DATA_HOME,\n      `${OC} config set logging.file ${LOG_FILE}`,\n      `${OC} config set gateway.mode local`,\n      `${OC} config set gateway.bind loopback`,\n      `${OC} config set update.checkOnStart false`,\n    ] } },\n    // A random gateway token, made once and kept in <app>/data/obstat-token.txt (this PC only).\n    { method: \"shell.run\", params: { path: \"runtime\", message: [\n      `node -e \"const fs=require('fs');fs.mkdirSync('../data',{recursive:true});const f='../data/obstat-token.txt';if(!fs.existsSync(f))fs.writeFileSync(f,require('crypto').randomBytes(24).toString('hex'),{mode:0o600})\"`,\n    ] } },\n  ],\n}\n",
+      "start.js": "const os = require(\"os\")\nconst win = os.platform() === \"win32\"\nconst NODE_PKG = win ? \"node-win-x64\" : os.platform() === \"darwin\" ? (os.arch() === \"arm64\" ? \"node-darwin-arm64\" : \"node-darwin-x64\") : \"node-linux-x64\"\nconst USE_NODE24 = win ? `set \"PATH=%CD%\\\\node_modules\\\\${NODE_PKG}\\\\bin;%PATH%\"` : `export PATH=\"$PWD/node_modules/${NODE_PKG}/bin:$PATH\"`\nconst DATA_HOME = win ? `set \"OPENCLAW_HOME=%CD%\\\\..\\\\data\"` : `export OPENCLAW_HOME=\"$PWD/../data\"`\n// Reads the gateway token install made, prints the page's address with it (in the URL\n// fragment, never sent over the network), then runs the gateway with that token.\nconst RUN = `node -e \"const t=require('fs').readFileSync('../data/obstat-token.txt','utf8').trim();const p=process.argv[1];console.log('Open http://127.0.0.1:'+p+'/#token='+t);require('child_process').spawn(process.execPath,['node_modules/openclaw/openclaw.mjs','gateway','run','--bind','loopback','--auth','token','--port',p],{stdio:'inherit',env:Object.assign({},process.env,{OPENCLAW_GATEWAY_TOKEN:t})}).on('exit',function(c){process.exit(c||0)})\" {{port}}`\nmodule.exports = {\n  daemon: true,\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        path: \"runtime\",\n        env: { NO_COLOR: \"1\", FORCE_COLOR: \"0\", OPENCLAW_TELEMETRY: \"0\", OPENCLAW_NO_AUTO_UPDATE: \"1\", OPENCLAW_DISABLE_BONJOUR: \"1\" },\n        message: [USE_NODE24, DATA_HOME, RUN],\n        // the address counts once the gateway answers there\n        on: [{ event: \"/(http:\\\\/\\\\/127\\\\.0\\\\.0\\\\.1:[0-9]+\\\\/#token=[0-9a-f]+)/\", done: true }],\n      },\n    },\n    { method: \"local.set\", params: { url: \"{{input.event[1]}}\" } },\n  ],\n}\n"
+    }
+  },
+  {
+    "id": "open-webui/open-webui",
+    "sha": "91ea4e3421d1d8069f13d4a463fcb5986d94ea60",
+    "scripts": {
+      "install.js": "module.exports = {\n  run: [\n    // The PyPI release built from this repo's version (0.12.3), web frontend included.\n    // On Windows the PyPI torch wheel it pulls in is the CPU build (no graphics card needed).\n    { method: \"shell.run\", params: { venv: \"env\", env: { UV_CACHE_DIR: \".uv-cache\" }, message: [\"uv pip install open-webui==0.12.3\"] } },\n  ],\n}\n",
+      "start.js": "// Open WebUI's logging hides uvicorn's \"running on\" line, so a tiny wrapper starts the\n// normal `open-webui serve` command and prints the URL once the server really answers.\nconst LAUNCH = \"python -c \\\"import sys,time,threading,urllib.request as u;p=sys.argv[1];h='http://127.0.0.1:'+p;\" +\n  \"exec('def w():\\\\n while 1:\\\\n  try:\\\\n   u.build_opener(u.ProxyHandler({})).open(h,timeout=5);print(h,flush=True);return\\\\n  except Exception:\\\\n   time.sleep(1)');\" +\n  \"threading.Thread(target=w,daemon=True).start();sys.argv=['open-webui','serve','--host','127.0.0.1','--port',p];\" +\n  \"from open_webui import app;app()\\\" {{port}}\"\nmodule.exports = {\n  daemon: true,\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        venv: \"env\",\n        env: {\n          DATA_DIR: \"data\",\n          HF_HOME: \"data/huggingface\",\n          SENTENCE_TRANSFORMERS_HOME: \"data/huggingface\",\n          SCARF_NO_ANALYTICS: \"true\",\n          DO_NOT_TRACK: \"true\",\n          ANONYMIZED_TELEMETRY: \"false\",\n          ENABLE_VERSION_UPDATE_CHECK: \"false\",\n          NO_COLOR: \"1\",\n          FORCE_COLOR: \"0\",\n        },\n        message: [LAUNCH],\n        on: [{ event: \"/(http:\\\\/\\\\/127\\\\.0\\\\.0\\\\.1:[0-9]+)/\", done: true }],\n      },\n    },\n    { method: \"local.set\", params: { url: \"{{input.event[1]}}\" } },\n  ],\n}\n"
+    }
+  },
+  {
+    "id": "SillyTavern/SillyTavern",
+    "sha": "06bde939fb1e9c4c8d8641d810f0a916b5bce127",
+    "scripts": {
+      "install.js": "module.exports = {\n  run: [\n    { method: \"shell.run\", params: { env: { npm_config_cache: \".npm-cache\" }, message: [\"npm ci --omit=dev --no-audit --no-fund\"] } },\n  ],\n}\n",
+      "start.js": "module.exports = {\n  daemon: true,\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        env: { NO_COLOR: \"1\", FORCE_COLOR: \"0\", NODE_ENV: \"production\" },\n        // listen=false keeps it on this computer only; data stays in <app>/data\n        message: [\"node server.js --port {{port}} --listen false --enableIPv6 false --enableIPv4 true --browserLaunchEnabled false --browserLaunchHostname 127.0.0.1 --dataRoot ./data\"],\n        on: [{ event: \"/(http:\\\\/\\\\/127\\\\.0\\\\.0\\\\.1:[0-9]+)/\", done: true }],\n      },\n    },\n    { method: \"local.set\", params: { url: \"{{input.event[1]}}\" } },\n  ],\n}\n"
+    }
+  },
+  {
+    "id": "HKUDS/nanobot",
+    "sha": "909b277e7a5a7ecd2aebdba9611e5febe86988d9",
+    "scripts": {
+      "install.js": "module.exports = {\n  run: [\n    // Builds this checkout (Python package + its browser UI, compiled with npm).\n    {\n      method: \"shell.run\",\n      params: {\n        venv: \"env\",\n        env: { UV_CACHE_DIR: \".uv-cache\", npm_config_cache: \".npm-cache\" },\n        message: [\"uv pip install .\"],\n      },\n    },\n  ],\n}\n",
+      "start.js": "module.exports = {\n  daemon: true,\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        venv: \"env\",\n        env: { NO_COLOR: \"1\", FORCE_COLOR: \"0\", COLUMNS: \"200\" },\n        // --home keeps config, sessions, memory and workspace in <app>/data (not ~/.nanobot);\n        // --yes accepts the safe localhost-only defaults on first run.\n        message: [\"nanobot --home ./data webui --no-open --yes --port {{port}}\"],\n        // the sign-in link (the secret after # stays in the browser, never sent to the server)\n        on: [{ event: \"/(http:\\\\/\\\\/127\\\\.0\\\\.0\\\\.1:[0-9]+\\\\/#\\\\/\\\\?bootstrapSecret=[A-Za-z0-9_%-]+)/\", done: true }],\n      },\n    },\n    { method: \"local.set\", params: { url: \"{{input.event[1]}}\" } },\n  ],\n}\n"
+    }
+  }
+]

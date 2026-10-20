@@ -1,0 +1,76 @@
+# Installs and starts the reviewed apps on Windows through Obstat's own code
+# (lib/apps.js and lib/worker.js, from the steps Obstat shows), opens each one in
+# Obstat's viewer (lib/viewer.js) and checks its page renders, then runs Build a UI
+# on a command-line app and uses the page it makes. The apps are listed in
+# e2e/apps.json, with the ones left out (NVIDIA-only or too heavy) and why.
+# Each app gets its own runner; logs and a screenshot are uploaded per app.
+name: Apps on Windows
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "Only these (ids from e2e/apps.json, space-separated; buildui:<id> for Build a UI). Empty: all."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.list.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: list
+        env:
+          ONLY: ${{ inputs.apps }}
+        run: |
+          node -e '
+            const l = require("./e2e/apps.json")
+            let all = [...l.apps.map((a) => a.id), ...l.buildui.map((a) => "buildui:" + a.id)]
+            const only = (process.env.ONLY || "").split(/\s+/).filter(Boolean).map((s) => s.toLowerCase())
+            if (only.length) all = all.filter((a) => only.includes(a.toLowerCase()))
+            console.log("apps=" + JSON.stringify(all))
+          ' >> "$GITHUB_OUTPUT"
+
+  app:
+    needs: list
+    name: ${{ matrix.app }}
+    runs-on: windows-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.list.outputs.apps) }}
+    steps:
+      # the token isn't left in .git/config, so the apps' install scripts can't use it
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install, start and open the app in Obstat
+        env:
+          APP: ${{ matrix.app }}
+        run: npx electron e2e/run.js "$env:APP"
+      - name: Keep the logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ strategy.job-index }}
+          path: e2e-out/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -293,6 +293,7 @@ const views = {
         el("ol", { class: "cmds" }, ...p.commands.map((c) => el("li", { class: c.risks.length ? "risky" : "" },
           el("code", { text: c.command }),
           (c.path !== "." || c.venv || c.env) && el("small", { text: [c.path !== "." && `in ${c.path}`, c.venv && `Python env ${c.venv}`, c.env && `with ${c.env.join(", ")}`].filter(Boolean).join(" · ") })))),
+        p.env?.length && el("p", { class: "note", text: `For every command Obstat also sets ${p.env.join(", ")}, so the app opens its page here in Obstat and stays on this PC.` }),
         el("div", { class: "row-btns" },
           el("button", { class: "btn small", text: what === "start" ? "Start it" : `Run ${what}`, onclick: async () => {
             note.replaceChildren()
@@ -439,6 +440,8 @@ const views = {
               await ask("buildUi", id, null)
               status.textContent = "Done. Starting it…"
               const r = await ask("run", id, "obstat-ui.js")
+              // an app nobody reviewed shows the new launcher's steps first
+              if (r.needsApproval) return showPlan(r.preview, "obstat-ui.js")
               if (r.ok && r.running) return go(runHash(id))
               status.textContent = r.error ? `It stopped: ${r.error}` : "Built. Click Open with Obstat UI to start it."
             } catch (err) { status.textContent = err.message }
@@ -1278,6 +1281,8 @@ async function runView(id) {
     stopBtn.disabled = false
     term.textContent = ""
     const r = await ask("run", id, script).catch((err) => ({ ok: false, error: err.message }))
+    // new or changed steps show on the app's page first
+    if (r.needsApproval) return go(appHash(a))
     if (!r.ok) say(`It stopped: ${r.error}`, el("button", { class: "btn small", text: "Back to the app", onclick: () => go(appHash(a)) }))
   }
   async function idle() {

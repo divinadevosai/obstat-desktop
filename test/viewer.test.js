@@ -7,3 +7,10 @@ test("apps that print 0.0.0.0 open at 127.0.0.1; other addresses stay as they ar
   assert.equal(reachable("http://127.0.0.1:5173/"), "http://127.0.0.1:5173/")
   assert.equal(reachable("http://localhost:3000/chat?x=1"), "http://localhost:3000/chat?x=1")
 })
+
+test("pages that draw with WebGL get Chromium's software fallback, so they aren't blank without a usable graphics driver", () => {
+  const { useSoftwareWebGL } = require("../lib/viewer")
+  const switches = []
+  useSoftwareWebGL({ commandLine: { appendSwitch: (s) => switches.push(s) } })
+  assert.deepEqual(switches, ["enable-unsafe-swiftshader"])
+})

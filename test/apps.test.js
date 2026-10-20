@@ -38,6 +38,9 @@ test("install, start, stop and remove an app", { skip: !hasPython || process.pla
   await a.fetchApp({ id, owner: "someone", name: "demo", url: repo.dir, sha: repo.sha, reviewed: true }, () => {})
   const preview = await a.preview(id, "install.js")
   assert.equal(preview.commands.length, 2)
+  // what Obstat sets for every command is shown with the steps
+  assert.ok(preview.env.some((e) => e.startsWith("BROWSER=") && e.includes("[obstat-open]")))
+  assert.ok(preview.env.includes("GRADIO_SERVER_NAME=127.0.0.1"))
 
   const installed = await a.run(id, "install.js")
   assert.deepEqual(installed, { ok: true })
@@ -261,4 +264,36 @@ test("an app is busy (and can be stopped) while Obstat is still downloading ffmp
   assert.equal(a.get(id).running, null)
   release()
   assert.deepEqual(await first, { ok: false, error: "Stopped." })
+})
+
+test("shells a killed Obstat left running are ended on the next start, and nothing else", async () => {
+  const { killShell } = apps
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const calls = []
+  const run = (cmd, args, _o, cb) => {
+    calls.push([cmd, ...args])
+    if (cmd === "tasklist") cb(null, args[1] === "PID eq 111" ? '"cmd.exe","111","Console","1","4,000 K"' : '"chrome.exe","222","Console","1","9,000 K"')
+    else cb(null, "")
+  }
+  fs.writeFileSync(path.join(h.root, "apps-running.json"), JSON.stringify({ "a/b": [111, 222] }))
+  const a = apps.create(h, { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" })
+  assert.equal(await a.cleanup("win32", run), 1)
+  assert.deepEqual(calls.filter((c) => c[0] === "taskkill"), [["taskkill", "/pid", "111", "/T", "/F"]])
+  assert.equal(fs.existsSync(path.join(h.root, "apps-running.json")), false)
+  assert.equal(await killShell("1; rm -rf /", "win32", run), false)
+})
+
+test("on Windows, Stop also ends what an app's shell started through another shell", async () => {
+  const t = Date.parse("2026-10-20T15:53:00Z")
+  const at = (s) => new Date(t + s * 1000).toISOString()
+  // 100 is the app's shell (gone); 200 npm, 300 a second cmd, 400 vite; 500 started before the app (a reused id)
+  const list = [`200 100 ${at(1)}`, `300 200 ${at(2)}`, `400 300 ${at(3)}`, `500 100 ${at(-60)}`, `600 1 ${at(5)}`].join("\r\n")
+  const calls = []
+  const run = (cmd, args, _o, cb) => { calls.push([cmd, ...args]); cb(null, cmd === "powershell.exe" ? list : "") }
+  assert.deepEqual((await apps.leftovers([100], t, run)).sort(), [200, 300, 400])
+  assert.equal(await apps.endLeftovers([100], t, run), 3)
+  const kill = calls.find((c) => c[0] === "taskkill")
+  assert.deepEqual(kill.slice(1, 2), ["/F"])
+  assert.deepEqual(kill.filter((x) => /^\d+$/.test(x)).sort(), ["200", "300", "400"])
+  assert.deepEqual(await apps.leftovers([], t, run), [])
 })
