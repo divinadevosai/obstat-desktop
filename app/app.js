@@ -1222,7 +1222,8 @@ function appendLog(id, text) {
 }
 
 window.obstat.onEvent((ev) => {
-  if (ev.type === "log") appendLog(ev.id, ev.text)
+  if (ev.type === "open-app" && typeof ev.id === "string") go(`#/app/${ev.id.split("/").map(encodeURIComponent).join("/")}`)
+  else if (ev.type === "log") appendLog(ev.id, ev.text)
   else if (ev.type === "progress") {
     // one line per 25% so the log doesn't flood
     const pct = ev.total ? Math.floor((ev.got / ev.total) * 4) * 25 : null

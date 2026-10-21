@@ -51,7 +51,15 @@
       "oneClick": true,
       "perMachine": false,
       "artifactName": "Obstat-Setup-${version}.${ext}"
-    }
+    },
+    "protocols": [
+      {
+        "name": "Obstat",
+        "schemes": [
+          "obstat"
+        ]
+      }
+    ]
   },
   "devDependencies": {
     "electron": "^44.9.0",
