@@ -16,6 +16,7 @@ const viewerLib = require("./lib/viewer")
 const updatesLib = require("./lib/updates")
 const buildUi = require("./lib/buildui")
 const cppToolsLib = require("./lib/cpptools")
+const deeplink = require("./lib/deeplink")
 const { which, withPath } = require("./lib/env")
 const fsp = require("node:fs/promises")
 const { spawn } = require("node:child_process")
@@ -76,6 +77,9 @@ protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: t
 viewerLib.useSoftwareWebGL(app)
 
 if (!app.requestSingleInstanceLock()) app.quit()
+// "Open in Obstat" on obstat.app uses obstat:// links (the installer registers them too)
+if (process.defaultApp) app.setAsDefaultProtocolClient("obstat", process.execPath, [path.resolve(process.argv[1] || ".")])
+else app.setAsDefaultProtocolClient("obstat")
 
 let win
 
@@ -109,13 +113,17 @@ function createWindow() {
     if (api.isSafeExternal(url)) shell.openExternal(url)
     return { action: "deny" }
   })
-  win.loadURL(START)
+  // started by an obstat:// link: open straight on that app's page
+  const first = deeplink.fromArgv(process.argv)
+  win.loadURL(first ? `${START}#/app/${first.split("/").map(encodeURIComponent).join("/")}` : START)
 }
 
-app.on("second-instance", () => {
+app.on("second-instance", (_e, argv) => {
   if (!win) return
   if (win.isMinimized()) win.restore()
   win.focus()
+  const id = deeplink.fromArgv(argv)
+  if (id) toWindow({ type: "open-app", id })
 })
 
 app.whenReady().then(() => {
