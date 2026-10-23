@@ -7,7 +7,7 @@ const crypto = require("node:crypto")
 const home = require("../lib/home")
 const divina = require("../lib/divina")
 
-const URL_ = "https://github.com/divinadevosai/divina-releases/releases/download/obstat-v1.0.0/Divina-Obstat-Setup-1.0.0-x64.exe"
+const URL_ = "https://raw.githubusercontent.com/divinadevosai/divina-releases/175e7dd6b8b40d8ec0eaa2163c8e9a2adae4908e/obstat/1.0.0/Divina-Obstat-Setup-1.0.0-x64.exe"
 const installer = Buffer.from("pretend Divina installer")
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex")
 const pinned = (over = {}) => ({ version: "1.0.0", site: "https://divinaos.site", win32: { url: URL_, sha256: sha(installer), size: installer.length, exe: "Divina.exe", uninstall: "Uninstall Divina.exe", ...over } })
@@ -35,9 +35,11 @@ test("Divina isn't offered until its checksum and size are pinned", async () => 
   await assert.rejects(d.install(), /isn't ready/)
 })
 
-test("the shipped entry points at the official release", () => {
+test("the shipped entry is the official 1.0.0 file, pinned", () => {
   assert.equal(divina.DIVINA.win32.url, URL_)
   assert.ok(divina.okHost(divina.DIVINA.win32.url))
+  assert.equal(divina.DIVINA.win32.sha256, "1bb4ebd487eadcdb3153931b0a5f86c863ceeb2510e2243aa317314da470e8f6")
+  assert.equal(divina.DIVINA.win32.size, 36131135)
 })
 
 test("Divina downloads, passes its check, installs silently and is recorded", async () => {
@@ -51,6 +53,7 @@ test("Divina downloads, passes its check, installs silently and is recorded", as
   assert.equal(st.installed, true)
   assert.equal(st.installedVersion, "1.0.0")
   assert.equal(st.update, false)
+  assert.equal(st.busy, null)
   assert.equal(fs.readdirSync(h.dir("cache")).length, 0)
 })
 

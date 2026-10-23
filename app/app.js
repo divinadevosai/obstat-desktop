@@ -896,10 +896,10 @@ async function divinaCard({ onlyInstalled = false } = {}) {
   if (st.busy) busy(st.busy === "removing" ? "Removing Divina…" : "Setting up Divina…")
   btns.append(el("button", { class: "btn small ghost", text: "divinaos.site ↗", onclick: () => window.obstat.openExternal(st.site) }))
   return el("section", { class: "divina" },
-    el("div", { class: "mark", "aria-hidden": "true", text: "D" }),
+    el("div", { class: "mark has-img", "aria-hidden": "true" }, el("img", { src: "divina.png", alt: "" })),
     el("div", { class: "divina-body" },
       el("h2", {}, "Divina ", el("span", { class: "badge gold", text: "Included free with Obstat" })),
-      el("p", { text: "A spatial OS you talk to. The full Divina desktop app, free for everyone who uses Obstat. Made by SWE3WE, the team behind Obstat." }),
+      el("p", { text: "A spatial OS you talk to: your day as live cards in a 3D room, controlled by voice, hands or keyboard. The full desktop app, free for everyone who uses Obstat. Made by SWE3WE, the team behind Obstat." }),
       line, btns))
 }
 
