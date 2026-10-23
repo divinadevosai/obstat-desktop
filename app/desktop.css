@@ -356,3 +356,14 @@ svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-l
 /* a page that's slow to get ready: the old one dims, so the click visibly landed */
 #view.loading > * { opacity: .55; transition: opacity .15s ease .05s; pointer-events: none; }
 .msg.pending { opacity: .6; }
+
+/* Divina, included free with Obstat */
+.divina{display:flex;gap:16px;align-items:flex-start;margin:0 0 28px;padding:18px 20px;border-radius:18px;border:1px solid rgba(217,180,106,.45);background:linear-gradient(135deg,rgba(217,180,106,.10),rgba(143,140,245,.08)),var(--panel)}
+.divina .mark{flex:none;width:48px;height:48px;border-radius:14px;font-size:20px;background:#24357f;color:var(--acc)}
+.divina-body{min-width:0}
+.divina h2{margin:2px 0 6px;font-size:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.divina-body>p{margin:0;color:var(--dim);line-height:1.45}
+.divina .divina-status{margin-top:8px;font-size:13.5px}
+.divina .divina-status.err{color:var(--amber)}
+.divina .row-btns{margin-top:12px}
+.badge.gold{color:var(--acc);border-color:rgba(217,180,106,.5);margin:0;font-size:12px;font-weight:600}

@@ -164,11 +164,12 @@ const views = {
   help: () => helpView(),
 
   apps: async () => {
-    const mine = (await ask("apps")).filter((a) => a.installed || a.running || a.local)
-    if (!mine.length) return page("My apps", "Apps you install live here, each in its own folder.",
-      emptyBox("Nothing installed yet", "Pick a reviewed app, or add any GitHub repo and look at its install steps first.",
+    const [all, divina] = await Promise.all([ask("apps"), divinaCard({ onlyInstalled: true })])
+    const mine = all.filter((a) => a.installed || a.running || a.local)
+    if (!mine.length) return page("My apps", "Apps you install live here, each in its own folder.", divina,
+      emptyBox(divina ? "No other apps yet" : "Nothing installed yet", "Pick a reviewed app, or add any GitHub repo and look at its install steps first.",
         linkBtn("Discover apps", "#/discover"), linkBtn("Add a repo", "#/add", true)))
-    return page("My apps", "Apps you install live here, each in its own folder.",
+    return page("My apps", "Apps you install live here, each in its own folder.", divina,
       el("div", { class: "rowlist" }, ...mine.map((a) => {
         const r = row({ ...a, reviewedAt: null })
         const meta = r.querySelector(".meta")
@@ -197,8 +198,10 @@ const views = {
     q.addEventListener("input", draw)
     sort.addEventListener("change", draw)
     draw()
+    const top = el("div", {})
+    divinaCard().then((c) => { if (c) top.replaceChildren(c) })
     return page("Discover", "Every app here was reviewed at an exact commit. If the repo changes, it comes off the list until it's checked again.",
-      el("div", { class: "listbar" }, q, sort), list)
+      top, el("div", { class: "listbar" }, q, sort), list)
   },
 
   add: (url = "") => {
@@ -861,11 +864,51 @@ function appTile(a) {
       btn))
 }
 
+// ---------- Divina, included free with Obstat ----------
+
+// One card on Home, Discover and My apps. Divina is a desktop app, so it opens in
+// its own window rather than inside Obstat. Nothing shows until a release is pinned.
+let divinaLine = null // the card's status line, for download progress
+const mb = (n) => `${Math.round(n / 1048576)} MB`
+async function divinaCard({ onlyInstalled = false } = {}) {
+  const st = await ask("divina").catch(() => null)
+  if (!st?.available && !st?.installed) return null
+  if (onlyInstalled && !st.installed) return null
+  const line = el("p", { class: "divina-status", role: "status", "aria-live": "polite" })
+  const btns = el("div", { class: "row-btns" })
+  const busy = (text) => { line.textContent = text; for (const b of btns.querySelectorAll("button")) b.disabled = true }
+  const act = (what, text) => async () => {
+    busy(text)
+    divinaLine = line
+    try { await ask(what); if (what !== "openDivina") render(); else line.textContent = "Divina is opening in its own window." }
+    catch (e) { line.textContent = e.message; line.classList.add("err"); for (const b of btns.querySelectorAll("button")) b.disabled = false }
+    finally { divinaLine = null }
+  }
+  if (st.installed) {
+    btns.append(el("button", { class: "btn small", text: "Open Divina", onclick: act("openDivina", "Opening Divina…") }))
+    if (st.update) btns.append(el("button", { class: "btn small ghost", text: `Update to ${st.version}`, onclick: act("installDivina", "Getting the update…") }))
+    btns.append(el("button", { class: "btn small ghost danger", text: "Remove", onclick: act("removeDivina", "Removing Divina… Your Divina data stays.") }))
+    line.textContent = `Installed${st.installedVersion ? `, version ${st.installedVersion}` : ""}. Opens in its own window.`
+  } else {
+    btns.append(el("button", { class: "btn small", text: `Get Divina${st.size ? `, ${mb(st.size)}` : ""}`, onclick: act("installDivina", "Starting the download…") }))
+    line.textContent = "Opens in its own window. Obstat checks the download's fingerprint before installing it."
+  }
+  if (st.busy) busy(st.busy === "removing" ? "Removing Divina…" : "Setting up Divina…")
+  btns.append(el("button", { class: "btn small ghost", text: "divinaos.site ↗", onclick: () => window.obstat.openExternal(st.site) }))
+  return el("section", { class: "divina" },
+    el("div", { class: "mark", "aria-hidden": "true", text: "D" }),
+    el("div", { class: "divina-body" },
+      el("h2", {}, "Divina ", el("span", { class: "badge gold", text: "Included free with Obstat" })),
+      el("p", { text: "A spatial OS you talk to. The full Divina desktop app, free for everyone who uses Obstat. Made by SWE3WE, the team behind Obstat." }),
+      line, btns))
+}
+
 async function homeView() {
-  const [mine, news, chats] = await Promise.all([
+  const [mine, news, chats, divina] = await Promise.all([
     ask("apps").then((l) => l.filter((a) => a.installed || a.running || a.local)).catch(() => []),
     askKept("news").catch(() => []),
     chatHighlights().catch(() => []),
+    divinaCard(),
   ])
   const fresh = [...repos].filter((r) => r.reviewedAt).sort((a, b) => new Date(b.reviewedAt) - new Date(a.reviewedAt)).slice(0, 4)
   const quick = (href, ic, cls, title, text) => el("a", { href }, el("span", { class: `ico ${cls}` }, icon(ic)), el("div", {}, el("b", { text: title }), el("span", { text })))
@@ -876,6 +919,7 @@ async function homeView() {
       quick("#/discover", "compass", "", "Find an app", "Reviewed AI apps that install in one click."),
       quick("#/create", "sparkle", "indigo", "Create an app", "Describe it in your own words and an AI agent builds it."),
       quick("#/add", "shield", "green", "Try any GitHub repo", "Paste a link and test it safely in the sandbox.")),
+    divina,
     el("div", { class: "dash" },
       el("div", {},
         el("section", {},
@@ -1236,6 +1280,7 @@ window.obstat.onEvent((ev) => {
     else window.obstat.openExternal(ev.url)
   }
   else if (ev.type === "update") showUpdate(ev)
+  else if (ev.type === "divina" && divinaLine) divinaLine.textContent = ev.got >= ev.total ? "Checking and installing Divina…" : `Downloading Divina… ${Math.floor((ev.got / ev.total) * 100)}%`
   else if (ev.type === "view" && current?.run && current.id === ev.id) current.onView(ev)
   else if (ev.type === "state" && current?.run && current.id === ev.id) current.onState()
   else if (ev.type === "state" && current?.id === ev.id && location.hash.startsWith("#/app/") && !current.note.childElementCount) {
