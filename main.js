@@ -16,6 +16,7 @@ const viewerLib = require("./lib/viewer")
 const updatesLib = require("./lib/updates")
 const buildUi = require("./lib/buildui")
 const cppToolsLib = require("./lib/cpptools")
+const divinaLib = require("./lib/divina")
 const deeplink = require("./lib/deeplink")
 const { which, withPath } = require("./lib/env")
 const fsp = require("node:fs/promises")
@@ -57,12 +58,13 @@ const sandbox = sandboxLib.create(home, runtimes, {
 })
 
 const viewer = viewerLib.create(() => win, { log: (l) => home.log(l), emit: toWindow })
+const divina = divinaLib.create(home, { fetchImpl: (url, opts) => net.fetch(url, opts), log: (l) => home.log(l) })
 
 const updates = updatesLib.create(app.isPackaged && process.platform === "win32" ? require("electron-updater").autoUpdater : null, {
   enabled: app.isPackaged && process.platform === "win32",
   log: (l) => home.log(l),
   emit: toWindow,
-  beforeInstall: () => { apps.stopAll(); sandbox.stopAll(); control.stop() },
+  beforeInstall: () => { apps.stopAll(); sandbox.stopAll(); control.stop(); divina.stop() },
 })
 
 const skills = skillsLib.create(path.join(__dirname, "skills"))
@@ -293,6 +295,22 @@ app.whenReady().then(() => {
   const cppTools = cppToolsLib.create(home, { fetchImpl: (url) => net.fetch(url), log: (line) => home.log(line) })
   handle("cpp-tools", () => cppTools.installed())
   handle("cpp-tools-install", () => cppTools.install())
+  // Divina, included free with Obstat (see lib/divina.js)
+  handle("divina", () => divina.status())
+  handle("divina-install", () => { viewer.close("divina"); return divina.install((got, total) => toWindow({ type: "divina", got, total })) })
+  // starts Divina's own server if it isn't running, then shows its page inside Obstat
+  handle("divina-show", async (bounds) => {
+    const url = await divina.serve()
+    viewer.show("divina", url, bounds).catch((err) => home.log(`divina: ${err.message}`))
+    return { url }
+  })
+  handle("divina-stop", () => { viewer.close("divina"); return divina.stop() })
+  handle("divina-window", () => divina.open())
+  handle("divina-external", () => {
+    const url = viewer.current("divina") || divina.running()
+    if (url && api.isLocalUrl(url)) return shell.openExternal(url)
+  })
+  handle("divina-remove", () => { viewer.close("divina"); return divina.remove() })
   handle("app-fetch", async (id) => {
     const mine = apps.get(id)
     if (mine?.local) { await apps.fetchApp(mine, () => {}); return mine }
@@ -458,6 +476,6 @@ ${guide.trim()}
 `
 }
 
-app.on("before-quit", () => { apps.stopAll(); sandbox.stopAll(); control.stop() })
+app.on("before-quit", () => { apps.stopAll(); sandbox.stopAll(); control.stop(); divina.stop() })
 
 app.on("window-all-closed", () => app.quit())

@@ -23,6 +23,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Divina, included free with Obstat: the pinned download, silent install, Open and Remove
+  divina:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node e2e/divina.js
+
   list:
     runs-on: ubuntu-latest
     outputs:
