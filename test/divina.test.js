@@ -118,10 +118,10 @@ test("Divina's server starts on 127.0.0.1 inside Obstat, is reused, and stops", 
   const { EventEmitter } = require("node:events")
   const started = []
   let up = new Set([47800]) // something that isn't Divina already holds 47800
-  const fetchImpl = async (url) => {
+  const connect = async (port) => port === 47800 || up.has(port)
+  const probeFetch = async (url) => {
     const port = Number(new URL(url).port)
     if (port === 47800) return new Response("{}")
-    if (!up.has(port)) throw new TypeError("fetch failed")
     return new Response(JSON.stringify({ studioVoice: null }))
   }
   const start = (file, args, o) => {
@@ -130,7 +130,7 @@ test("Divina's server starts on 127.0.0.1 inside Obstat, is reused, and stops", 
     setTimeout(() => up.add(Number(o.env.PORT)), 5)
     return c
   }
-  const d = divina.create(h, { platform: "win32", env, info: pinned(), fetchImpl, start, pollMs: 1 })
+  const d = divina.create(h, { platform: "win32", env, info: pinned(), probeFetch, connect, start, pollMs: 1 })
   const url = await d.serve()
   assert.equal(url, "http://127.0.0.1:47801")
   assert.equal(started[0].file, path.join(dir, "node", "node.exe"))
@@ -145,7 +145,7 @@ test("Divina's server starts on 127.0.0.1 inside Obstat, is reused, and stops", 
   assert.equal(d.status().running, null)
   // Divina.exe already running its server: Obstat shows that one and starts nothing
   up.add(47802)
-  const d2 = divina.create(h, { platform: "win32", env, info: pinned(), fetchImpl, start, pollMs: 1 })
+  const d2 = divina.create(h, { platform: "win32", env, info: pinned(), probeFetch, connect, start, pollMs: 1 })
   up.add(47801); assert.equal(await d2.serve(), "http://127.0.0.1:47801")
   assert.equal(started.length, 1)
 })
@@ -157,7 +157,48 @@ test("a Divina server that dies while starting is reported", async () => {
   fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "Divina.exe"), "")
   const { EventEmitter } = require("node:events")
   const start = () => { const c = Object.assign(new EventEmitter(), { kill() {} }); setTimeout(() => c.emit("exit", 1), 5); return c }
-  const d = divina.create(h, { platform: "win32", env, info: pinned(), fetchImpl: async () => { throw new TypeError("fetch failed") }, start, pollMs: 1 })
+  const d = divina.create(h, { platform: "win32", env, info: pinned(), connect: async () => false, start, pollMs: 1 })
   await assert.rejects(d.serve(), /stopped while starting/)
   assert.equal(d.status().running, null)
+})
+
+test("closed ports read as free with a real TCP knock, even when fetch can't tell", async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const env = { LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "local-")), APPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "roam-")) }
+  const dir = path.join(env.LOCALAPPDATA, "Programs", "Divina")
+  fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "Divina.exe"), "")
+  const { EventEmitter } = require("node:events")
+  const http = require("node:http")
+  // a web server that isn't Divina sits on 47800; 47801 and up are closed
+  const other = http.createServer((_q, s) => s.end("hello")).listen(47800, "127.0.0.1")
+  await new Promise((r) => other.once("listening", r))
+  const started = []
+  let divinaServer = null
+  const start = (file, args, o) => {
+    started.push(o.env.PORT)
+    divinaServer = http.createServer((_q, s) => s.end(JSON.stringify({ studioVoice: null }))).listen(Number(o.env.PORT), "127.0.0.1")
+    return Object.assign(new EventEmitter(), { kill() { divinaServer.close() } })
+  }
+  // what Electron's fetch did: a closed port looked like a hang, never like "nothing there"
+  const probeFetch = async (url, o) => { const r = await fetch(url, o); return r }
+  try {
+    const d = divina.create(h, { platform: "win32", env, info: pinned(), probeFetch, start, pollMs: 1 })
+    assert.equal(await d.serve(), "http://127.0.0.1:47801")
+    assert.deepEqual(started, ["47801"])
+    d.stop()
+  } finally { other.close(); divinaServer?.close() }
+})
+
+test("when all of Divina's ports are taken, Obstat uses another free one", async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const env = { LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "local-")), APPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "roam-")) }
+  const dir = path.join(env.LOCALAPPDATA, "Programs", "Divina")
+  fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "Divina.exe"), "")
+  const { EventEmitter } = require("node:events")
+  let up = false
+  const connect = async (port) => port !== 51234 || up
+  const probeFetch = async (url) => new Response(Number(new URL(url).port) === 51234 ? JSON.stringify({ studioVoice: null }) : "{}")
+  const start = (file, args, o) => { assert.equal(o.env.PORT, "51234"); setTimeout(() => { up = true }, 5); return Object.assign(new EventEmitter(), { kill() {} }) }
+  const d = divina.create(h, { platform: "win32", env, info: pinned(), probeFetch, connect, freePort: async () => 51234, start, pollMs: 1 })
+  assert.equal(await d.serve(), "http://127.0.0.1:51234")
 })

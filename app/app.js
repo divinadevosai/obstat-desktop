@@ -159,6 +159,7 @@ const linkBtn = (text, hash, ghost) => el("a", { class: ghost ? "btn ghost" : "b
 const views = {
   home: () => homeView(),
   run: (id) => id === DIVINA ? divinaView() : runView(id),
+  divina: () => divinaPage(),
   create: () => createView(),
   tools: () => toolsView(),
   help: () => helpView(),
@@ -895,12 +896,81 @@ async function divinaCard({ onlyInstalled = false } = {}) {
   }
   if (st.busy) busy(st.busy === "removing" ? "Removing Divina…" : "Setting up Divina…")
   btns.append(el("button", { class: "btn small ghost", text: "divinaos.site ↗", onclick: () => window.obstat.openExternal(st.site) }))
+  if (st.installed) btns.insertBefore(el("button", { class: "btn small ghost", text: "Settings and log", onclick: () => go("#/divina") }), btns.children[1])
   return el("section", { class: "divina" },
-    el("div", { class: "mark has-img", "aria-hidden": "true" }, el("img", { src: "divina.png", alt: "" })),
+    el("a", { class: "mark has-img", href: "#/divina", "aria-label": "Divina's page" }, el("img", { src: "divina.png", alt: "" })),
     el("div", { class: "divina-body" },
-      el("h2", {}, "Divina ", el("span", { class: "badge gold", text: "Included free with Obstat" })),
+      el("h2", {}, el("a", { class: "dv-name", href: "#/divina", text: "Divina" }), " ", el("span", { class: "badge gold", text: "Included free with Obstat" })),
       el("p", { text: "A spatial OS you talk to: your day as live cards in a 3D room, controlled by voice, hands or keyboard. The full desktop app, free for everyone who uses Obstat. Made by SWE3WE, the team behind Obstat." }),
       line, btns))
+}
+
+// Divina's own page, laid out like every app's: Start, Stop, Update, Reset, folders, Remove and its log
+async function divinaPage() {
+  const st = await ask("divina").catch(() => null)
+  if (!st?.installed) return [el("button", { class: "back", text: "← Back", onclick: () => history.back() }), await divinaCard() || page("Divina isn't available", "")]
+  const term = el("pre", { text: "Divina hasn't written anything yet. Start it and its log shows up here." })
+  const logBody = el("div", { class: "term-body" }, term)
+  const status = el("p", { class: "note", role: "status", "aria-live": "polite" })
+  const showLog = async () => {
+    const r = await ask("divinaLog").catch(() => null)
+    if (!r?.text) return
+    const stick = logBody.scrollTop + logBody.clientHeight >= logBody.scrollHeight - 30
+    if (term.textContent !== r.text) term.textContent = (r.truncated ? "… (older lines not shown)\n" : "") + r.text
+    if (stick) logBody.scrollTop = logBody.scrollHeight
+  }
+  showLog()
+  poll = setInterval(showLog, 2000)
+  const act = (text, onclick, cls = "", ic = null, hint = null) => el("button", { class: cls, onclick }, ic && icon(ic), el("span", {}, text, hint && el("small", { text: hint })))
+  const head = (text) => el("p", { class: "menu-h", text })
+  const busy = (text) => { status.textContent = text; for (const b of menu.querySelectorAll("button")) b.disabled = true }
+  const task = (what, text, after = render) => async () => {
+    busy(text)
+    divinaLine = status
+    try { await ask(what); after() }
+    catch (e) { status.textContent = e.message; for (const b of menu.querySelectorAll("button")) b.disabled = false }
+    finally { divinaLine = null }
+  }
+  const stop = async () => { await ask("stopDivina").catch(() => {}); render() }
+  const restart = async () => { busy("Restarting Divina…"); await ask("stopDivina").catch(() => {}); go(runHash(DIVINA)) }
+  const menu = el("div", { class: "actions-menu" },
+    head("Run"),
+    act(st.running ? "Open" : "Start", () => go(runHash(DIVINA)), "primary", st.running ? "open" : "play", "Use it here in Obstat"),
+    act("Open in its own window", () => window.obstat.divinaWindow(), "", "open"),
+    st.running && act("Stop", stop, "", "stop"),
+    st.running && act("Restart", restart, "", "update", "Stop it and start it fresh"),
+    head("Keep it working"),
+    st.update
+      ? act(`Update to ${st.version}`, task("installDivina", "Getting the update…"), "", "update", "Newest version from SWE3WE")
+      : act("Update", () => { status.textContent = `You have the newest Divina (${st.version}). New versions arrive with Obstat's own updates.` }, "", "update", "Up to date"),
+    act("Reset", () => { if (confirm("Reset Divina? Obstat downloads it again, checks it and installs it fresh. Your Divina data stays.")) task("installDivina", "Downloading Divina again…")() }, "", "reset", "Fresh install, keeps your data"),
+    head("App"),
+    act("Open folder", () => ask("divinaFolder", "app").catch((e) => { status.textContent = e.message }), "", "folder"),
+    act("Open data folder", () => ask("divinaFolder", "data").catch((e) => { status.textContent = e.message }), "", "folder", "Your rooms, cards and settings"),
+    act("divinaos.site", () => window.obstat.openExternal(st.site), "", "link"),
+    act("Remove", () => { if (confirm("Remove Divina? Your Divina data stays, so it's all there if you get it again.")) task("removeDivina", "Removing Divina…", () => go("#/apps"))() }, "danger", "trash"))
+  if (st.busy) busy(st.busy === "removing" ? "Removing Divina…" : "Setting up Divina…")
+  return [
+    el("button", { class: "back", text: "← Back", onclick: () => history.back() }),
+    el("div", { class: "app-head" },
+      el("div", { class: "mark has-img dv", "aria-hidden": "true" }, el("img", { src: "divina.png", alt: "" })),
+      el("div", {},
+        el("h1", { text: "Divina" }),
+        el("div", { class: "by", text: "SWE3WE" }),
+        el("div", { class: "meta" },
+          el("span", { class: "badge gold", text: "Included free with Obstat" }),
+          el("span", { class: "badge", text: st.running ? "Running" : "Installed" }),
+          st.installedVersion && el("span", { text: `Version ${st.installedVersion}` })))),
+    el("div", { class: "app-body" }, menu,
+      el("div", { class: "pane" },
+        el("div", { class: "about" },
+          el("p", { text: "A spatial OS you talk to: your day as live cards in a 3D room, controlled by voice, hands or keyboard." }),
+          el("p", { class: "note", text: "Installed from SWE3WE's official download, which Obstat checks against its pinned fingerprint first." }),
+          status),
+        el("div", { class: "term" },
+          el("div", { class: "term-h" }, el("i"), el("i"), el("i"), el("span", { text: "divina.log" })),
+          logBody))),
+  ]
 }
 
 // Divina open inside Obstat: Obstat starts Divina's own server and shows its page,
@@ -928,7 +998,7 @@ async function divinaView() {
     stopBtn.disabled = false
     say("Starting Divina…")
     try { const r = await ask("showDivina", bounds()); on = true; where.textContent = r.url }
-    catch (e) { say(e.message, el("button", { class: "btn small", text: "Try again", onclick: start }), el("button", { class: "btn small ghost", text: "Open the log", onclick: () => go("#/logs") })) }
+    catch (e) { say(e.message, el("button", { class: "btn small", text: "Try again", onclick: start }), el("button", { class: "btn small ghost", text: "Open the log", onclick: () => go("#/divina") })) }
   }
   current = {
     id: DIVINA, note: el("div"), run: true, onState: () => {},
@@ -1452,7 +1522,7 @@ async function render() {
   // a running app's page sits on top of the window; only the Run screen shows it
   if (route !== "run") window.obstat.hideView()
   view.classList.toggle("full", route === "run")
-  const SECTION = { app: "apps", news: "chat", sandbox: "tools", disk: "tools", plugins: "tools", skills: "tools", logs: "tools", server: "tools", autolaunch: "tools", reviews: "help", updates: "help" }
+  const SECTION = { app: "apps", divina: "apps", news: "chat", sandbox: "tools", disk: "tools", plugins: "tools", skills: "tools", logs: "tools", server: "tools", autolaunch: "tools", reviews: "help", updates: "help" }
   for (const a of document.querySelectorAll(".menu a[data-route]")) {
     const on = a.dataset.route === (SECTION[route] || route)
     on ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")

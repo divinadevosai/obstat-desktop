@@ -58,6 +58,7 @@ const sandbox = sandboxLib.create(home, runtimes, {
 })
 
 const viewer = viewerLib.create(() => win, { log: (l) => home.log(l), emit: toWindow })
+// net.fetch only for the download; Divina's port checks use Node's own (see lib/divina.js)
 const divina = divinaLib.create(home, { fetchImpl: (url, opts) => net.fetch(url, opts), log: (l) => home.log(l) })
 
 const updates = updatesLib.create(app.isPackaged && process.platform === "win32" ? require("electron-updater").autoUpdater : null, {
@@ -311,6 +312,11 @@ app.whenReady().then(() => {
     if (url && api.isLocalUrl(url)) return shell.openExternal(url)
   })
   handle("divina-remove", () => { viewer.close("divina"); return divina.remove() })
+  handle("divina-log", () => home.readLog("divina.log").catch(() => ({ text: "", size: 0 })))
+  handle("divina-folder", async (which) => {
+    const err = await shell.openPath(which === "data" ? divina.data() : divina.dir())
+    if (err) throw new Error(err)
+  })
   handle("app-fetch", async (id) => {
     const mine = apps.get(id)
     if (mine?.local) { await apps.fetchApp(mine, () => {}); return mine }
