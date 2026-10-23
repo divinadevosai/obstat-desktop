@@ -28,8 +28,13 @@ const running = () => { try { return /Divina\.exe/i.test(execFileSync("tasklist"
   if (!st.installed || st.installedVersion !== divinaLib.DIVINA.version || st.busy) fail("not installed as expected")
   say("files:", fs.readdirSync(divina.dir()).join(", "))
 
-  // inside Obstat: Obstat starts Divina's server and its page loads
+  // inside Obstat: Obstat starts Divina's server and its page loads, even with
+  // some other web server already on Divina's first port
+  const other = require("node:http").createServer((_q, r) => r.end("not Divina")).listen(47800, "127.0.0.1")
+  await new Promise((r) => other.once("listening", r))
   const url = await divina.serve()
+  other.close()
+  if (url === "http://127.0.0.1:47800") fail("took another app's port for Divina")
   say("Divina is serving at", url)
   const page = await fetch(url)
   const html = await page.text()

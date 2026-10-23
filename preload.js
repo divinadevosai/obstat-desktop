@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld("obstat", {
   divinaWindow: call("divina-window"),
   divinaExternal: call("divina-external"),
   removeDivina: call("divina-remove"),
+  divinaLog: call("divina-log"),
+  divinaFolder: call("divina-folder"),
   fetchApp: call("app-fetch"),
   preview: call("app-preview"),
   run: call("app-run"),
