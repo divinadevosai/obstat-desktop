@@ -136,6 +136,7 @@ test("Divina's server starts on 127.0.0.1 inside Obstat, is reused, and stops", 
   assert.equal(started[0].file, path.join(dir, "node", "node.exe"))
   assert.deepEqual(started[0].args, [path.join(dir, "app", "server.js")])
   assert.equal(started[0].o.env.HOSTNAME, "127.0.0.1")
+  assert.equal(started[0].o.env.DIVINA_DESKTOP_BRIDGE, "1")
   assert.equal(started[0].o.env.DIVINA_DATA_DIR, path.join(env.APPDATA, "Divina"))
   assert.equal(await d.serve(), url)
   assert.equal(started.length, 1)
