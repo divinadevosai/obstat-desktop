@@ -10,7 +10,7 @@ const divina = require("../lib/divina")
 const URL_ = "https://raw.githubusercontent.com/divinadevosai/divina-releases/175e7dd6b8b40d8ec0eaa2163c8e9a2adae4908e/obstat/1.0.0/Divina-Obstat-Setup-1.0.0-x64.exe"
 const installer = Buffer.from("pretend Divina installer")
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex")
-const pinned = (over = {}) => ({ version: "1.0.0", site: "https://divinaos.site", win32: { url: URL_, sha256: sha(installer), size: installer.length, exe: "Divina.exe", uninstall: "Uninstall Divina.exe", ...over } })
+const pinned = (over = {}) => ({ version: "1.0.0", site: "https://divinaos.site", win32: { url: URL_, sha256: sha(installer), size: installer.length, exe: "Divina.exe", uninstall: "Uninstall Divina.exe", node: "node/node.exe", server: "app/server.js", ...over } })
 const serve = (buf, url) => async () => { const r = new Response(buf); if (url) Object.defineProperty(r, "url", { value: url }); return r }
 
 function setup(opts = {}) {
@@ -108,4 +108,55 @@ test("Open starts Divina on its own, and needs it installed", async () => {
   d.open()
   assert.equal(started[0].file, path.join(dir, "Divina.exe"))
   assert.equal(started[0].o.detached, true)
+})
+
+test("Divina's server starts on 127.0.0.1 inside Obstat, is reused, and stops", async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const env = { LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "local-")), APPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "roam-")) }
+  const dir = path.join(env.LOCALAPPDATA, "Programs", "Divina")
+  fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "Divina.exe"), "")
+  const { EventEmitter } = require("node:events")
+  const started = []
+  let up = new Set([47800]) // something that isn't Divina already holds 47800
+  const fetchImpl = async (url) => {
+    const port = Number(new URL(url).port)
+    if (port === 47800) return new Response("{}")
+    if (!up.has(port)) throw new TypeError("fetch failed")
+    return new Response(JSON.stringify({ studioVoice: null }))
+  }
+  const start = (file, args, o) => {
+    const c = Object.assign(new EventEmitter(), { pid: 4242, kill() { up.delete(Number(o.env.PORT)); this.emit("exit") } })
+    started.push({ file, args, o })
+    setTimeout(() => up.add(Number(o.env.PORT)), 5)
+    return c
+  }
+  const d = divina.create(h, { platform: "win32", env, info: pinned(), fetchImpl, start, pollMs: 1 })
+  const url = await d.serve()
+  assert.equal(url, "http://127.0.0.1:47801")
+  assert.equal(started[0].file, path.join(dir, "node", "node.exe"))
+  assert.deepEqual(started[0].args, [path.join(dir, "app", "server.js")])
+  assert.equal(started[0].o.env.HOSTNAME, "127.0.0.1")
+  assert.equal(started[0].o.env.DIVINA_DATA_DIR, path.join(env.APPDATA, "Divina"))
+  assert.equal(await d.serve(), url)
+  assert.equal(started.length, 1)
+  assert.equal(d.status().running, url)
+  assert.equal(d.stop(), true)
+  assert.equal(d.status().running, null)
+  // Divina.exe already running its server: Obstat shows that one and starts nothing
+  up.add(47802)
+  const d2 = divina.create(h, { platform: "win32", env, info: pinned(), fetchImpl, start, pollMs: 1 })
+  up.add(47801); assert.equal(await d2.serve(), "http://127.0.0.1:47801")
+  assert.equal(started.length, 1)
+})
+
+test("a Divina server that dies while starting is reported", async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const env = { LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "local-")), APPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "roam-")) }
+  const dir = path.join(env.LOCALAPPDATA, "Programs", "Divina")
+  fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "Divina.exe"), "")
+  const { EventEmitter } = require("node:events")
+  const start = () => { const c = Object.assign(new EventEmitter(), { kill() {} }); setTimeout(() => c.emit("exit", 1), 5); return c }
+  const d = divina.create(h, { platform: "win32", env, info: pinned(), fetchImpl: async () => { throw new TypeError("fetch failed") }, start, pollMs: 1 })
+  await assert.rejects(d.serve(), /stopped while starting/)
+  assert.equal(d.status().running, null)
 })

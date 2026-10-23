@@ -1,6 +1,7 @@
 // End-to-end check of Divina, included free with Obstat, on a real Windows PC,
 // through lib/divina.js: download the pinned file, check it, install it silently,
-// open Divina and see it keeps running, then remove it again.
+// start Divina's server the way Obstat does to show it inside its window, open it
+// in its own window too, then remove it again.
 //
 //   node e2e/divina.js
 "use strict"
@@ -27,6 +28,20 @@ const running = () => { try { return /Divina\.exe/i.test(execFileSync("tasklist"
   if (!st.installed || st.installedVersion !== divinaLib.DIVINA.version || st.busy) fail("not installed as expected")
   say("files:", fs.readdirSync(divina.dir()).join(", "))
 
+  // inside Obstat: Obstat starts Divina's server and its page loads
+  const url = await divina.serve()
+  say("Divina is serving at", url)
+  const page = await fetch(url)
+  const html = await page.text()
+  if (!page.ok || !/<html/i.test(html)) fail(`Divina's page didn't load (${page.status})`)
+  say(`its page loads (${html.length} bytes)`)
+  if (await divina.serve() !== url) fail("a second Open started another server")
+  divina.stop()
+  await new Promise((r) => setTimeout(r, 3000))
+  if (await fetch(url).then(() => true, () => false)) fail("Stop left Divina's server running")
+  say("stopped")
+
+  // in its own window, as Divina.exe opens it
   divina.open()
   await new Promise((r) => setTimeout(r, 20000))
   if (!running()) fail("Divina.exe didn't keep running after Open")

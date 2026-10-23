@@ -367,3 +367,4 @@ svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-l
 .divina .divina-status.err{color:var(--amber)}
 .divina .row-btns{margin-top:12px}
 .badge.gold{color:var(--acc);border-color:rgba(217,180,106,.5);margin:0;font-size:12px;font-weight:600}
+.mark.dv{background:#000}
