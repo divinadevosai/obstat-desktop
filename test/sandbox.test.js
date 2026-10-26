@@ -73,9 +73,10 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
   const victim = require("node:http").createServer((q, r) => r.end("secret page")).listen(0, "127.0.0.1")
   await new Promise((r) => victim.once("listening", r))
   const reach = `"${process.execPath}" -e "fetch('http://127.0.0.1:${victim.address().port}/').then((r) => r.text()).then((t) => console.log(t), () => console.log('blocked'))" > victim.txt`
+  let sb
   try {
     const events = []
-    const sb = sandboxLib.create(h, runtimes, { emit: (e) => events.push(e), platform: process.platform, sandboxExe: null })
+    sb = sandboxLib.create(h, runtimes, { emit: (e) => events.push(e), platform: process.platform, sandboxExe: null })
     const log = () => events.filter((e) => e.type === "log").map((e) => e.text).join("")
     const steal = (f, out) => `(cat '${f}' > ${out} 2>/dev/null && echo yes || echo no) > ${out}.result`
     const repo = makeRepo({
@@ -113,6 +114,8 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
     // Stop ended everything inside: nothing answers any more
     await assert.rejects(fetch(page.running.url))
   } finally {
+    // a failed run mustn't leave the test's processes keeping this file going
+    await sb?.stopAll()
     victim.close()
     fs.rmSync(secret, { force: true })
     fs.rmSync(escaped, { force: true })
