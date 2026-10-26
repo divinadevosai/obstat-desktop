@@ -79,3 +79,13 @@ test("Linux without a keyring doesn't count as encrypted", () => {
   assert.equal(platform.encryptionReal(store(true, "basic_text"), "darwin"), true, "only Linux has the fallback")
   assert.equal(platform.encryptionReal({ isEncryptionAvailable: () => true }, "win32"), true)
 })
+
+test("on Stop in Apple's sandbox, Obstat finds everything below the test's worker, deepest first, and nothing else", () => {
+  const { descendants } = require("../lib/apps")
+  // 10 is the worker: 11 and 12 its shells, 13 started by 11; 20 and 21 are other programs
+  const ps = () => "  1     0\n 10     5\n 11    10\n 12    10\n 13    11\n 20     1\n 21    20\n"
+  const found = descendants(10, ps)
+  assert.deepEqual([...found].sort(), [11, 12, 13])
+  assert.ok(found.indexOf(13) < found.indexOf(11), "a child is ended before its parent")
+  assert.deepEqual(descendants(10, () => { throw new Error("no ps") }), [])
+})

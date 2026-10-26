@@ -38,8 +38,8 @@ test("Apple's sandbox: paths go in as parameters, never into the rules", () => {
   assert.match(profile, /\(deny file-write\*\)/)
   assert.match(profile, /\(deny file-read\* \(subpath "\/Volumes"\) \(subpath "\/Users"\)/)
   assert.match(profile, /com\.apple\.SecurityServer/)
-  // other programs can't be signalled, but what the test itself started can
-  assert.ok(profile.indexOf("(allow signal (target same-sandbox))") > profile.indexOf("(deny signal (target others))"))
+  // no program can be signalled: Obstat ends a test's processes itself
+  assert.ok(profile.includes("(deny signal (target others))") && !/allow signal/.test(profile))
   // allows come after the denies they make exceptions to (later rules win)
   assert.ok(profile.indexOf('(param "WRITE0")') > profile.indexOf('(subpath "/Users")'))
 })
@@ -113,7 +113,8 @@ test("a hostile app in the real sandbox can't read your files or Obstat's keys, 
     await new Promise((r) => setTimeout(r, 300))
     assert.ok(other.exitCode === null && other.signalCode === null, `ended a program outside the sandbox (${other.signalCode})`)
     assert.equal(out.signalOther, false, "could signal a program outside the sandbox")
-    assert.equal(out.signalOwn, true, "couldn't end a program it started itself")
+    // bubblewrap's own processes are all the test's; on a Mac Obstat ends them on Stop
+    if (walls.kind === "bwrap") assert.equal(out.signalOwn, true, "couldn't end a program it started itself")
     if (walls.kind === "bwrap") assert.ok(out.procs > 0 && out.procs < 5, `sees ${out.procs} processes`)
   } finally {
     other.kill()
