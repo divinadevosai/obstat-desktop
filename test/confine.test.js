@@ -124,6 +124,7 @@ test("Apple's sandbox: the folders above what a test may use can be looked up, n
   for (const d of ["/Users/a/obstat/sandboxes", "/Users/a/obstat", "/Users/a", "/Users", "/Applications"]) assert.ok(ups.includes(d), d)
   assert.ok(!ups.includes("/"))
   assert.match(profile, /\(allow file-read-metadata \(literal \(param "UP0"\)\)\)/)
-  // looking up isn't reading: the home folder's files stay unreadable
+  // looking up isn't reading: the home folder's files stay unreadable, bar a package.json
   assert.ok(!/allow file-read\* \(subpath \(param "UP/.test(profile))
+  assert.ok(args.includes("PKG2=/Users/a/package.json"))
 })
