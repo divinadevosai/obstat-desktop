@@ -68,3 +68,14 @@ test("on a Mac, leftover shells are found with ps (there's no /proc)", async () 
   try { assert.equal(await apps.killShell(4242, "darwin", run), true) } finally { process.kill = kill }
   assert.deepEqual(killed, [[-4242, "SIGTERM"]])
 })
+
+test("Linux without a keyring doesn't count as encrypted", () => {
+  const store = (available, backend) => ({ isEncryptionAvailable: () => available, getSelectedStorageBackend: () => backend })
+  assert.equal(platform.encryptionReal(store(true, "basic_text"), "linux"), false)
+  assert.equal(platform.encryptionReal(store(true, "unknown"), "linux"), false)
+  assert.equal(platform.encryptionReal(store(true, "gnome_libsecret"), "linux"), true)
+  assert.equal(platform.encryptionReal(store(true, "kwallet6"), "linux"), true)
+  assert.equal(platform.encryptionReal(store(false, "gnome_libsecret"), "linux"), false)
+  assert.equal(platform.encryptionReal(store(true, "basic_text"), "darwin"), true, "only Linux has the fallback")
+  assert.equal(platform.encryptionReal({ isEncryptionAvailable: () => true }, "win32"), true)
+})

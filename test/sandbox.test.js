@@ -70,7 +70,9 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
   fs.writeFileSync(path.join(h.root, "control.json"), '{"token":"t"}')
   const escaped = path.join(os.homedir(), `.obstat-escaped-${path.basename(h.root)}`)
   try {
-    const sb = sandboxLib.create(h, runtimes, { platform: process.platform, sandboxExe: null })
+    const events = []
+    const sb = sandboxLib.create(h, runtimes, { emit: (e) => events.push(e), platform: process.platform, sandboxExe: null })
+    const log = () => events.filter((e) => e.type === "log").map((e) => e.text).join("")
     const steal = (f, out) => `(cat '${f}' > ${out} 2>/dev/null && echo yes || echo no) > ${out}.result`
     const repo = makeRepo({
       "install.js": `module.exports = { run: [{ method: "shell.run", params: { message: [
@@ -81,13 +83,13 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
         "echo $OBSTAT_SANDBOX > mode.txt",
       ] } }] }`,
       "start.js": `module.exports = { daemon: true, run: [
-        { method: "shell.run", params: { message: ["python3 -u -m http.server {{port}} --bind 127.0.0.1"], on: [{ event: "/(http:\\/\\/[0-9.:]+)/", done: true }] } },
+        { method: "shell.run", params: { message: [${JSON.stringify(`"${process.execPath}" -e "require('http').createServer((q, r) => r.end('ok')).listen(Number(process.env.PORT), '127.0.0.1', () => console.log('at http://127.0.0.1:' + process.env.PORT))"`)}], on: [{ event: "/(http:\\/\\/[0-9.:]+)/", done: true }] } },
         { method: "local.set", params: { url: "{{input.event[1]}}" } },
       ] }`,
     })
     assert.equal((await sb.info()).mode, "walls")
     const r = await sb.test(entry(repo))
-    assert.equal(r.running, true, JSON.stringify(r))
+    assert.equal(r.running, true, `${JSON.stringify(r)}\n${log()}`)
     const dir = sb.appDir("someone/demo")
     const said = (f) => fs.readFileSync(path.join(dir, f), "utf8").trim()
     assert.equal(said("secret.txt.result"), "no", "read a file in your home folder")
@@ -150,4 +152,24 @@ test("Windows Sandbox mode maps the app read-only and only lets log text out", {
   await sb.remove("someone/demo")
   assert.ok(!fs.existsSync(run))
   assert.equal(sb.list().length, 0)
+})
+
+test("on Mac and Linux a test doesn't get Obstat's own environment (exported keys stay out)", { skip: process.platform === "win32", timeout: 60000 }, async (t) => {
+  const walls = await require("../lib/confine").detect()
+  if (!walls.kind) return t.skip(`no sandbox here: ${walls.reason}`)
+  const h = home.create(fs.mkdtempSync(path.join(os.homedir(), ".obstat-sbenv-"))); h.ensure()
+  process.env.OBSTAT_TEST_SECRET_KEY = "sk-should-not-leak"
+  try {
+    const sb = sandboxLib.create(h, runtimes, { platform: process.platform, sandboxExe: null })
+    const repo = makeRepo({ "install.js": `module.exports = { run: [{ method: "shell.run", params: { message: ["env > env.txt"] } }] }` })
+    const r = await sb.test(entry(repo))
+    assert.equal(r.ok, true, JSON.stringify(r))
+    const seen = fs.readFileSync(path.join(sb.appDir("someone/demo"), "env.txt"), "utf8")
+    assert.doesNotMatch(seen, /sk-should-not-leak/)
+    assert.match(seen, /^HOME=.*someone-demo\.home$/m)
+    assert.match(seen, /^OBSTAT_SANDBOX=walls$/m)
+  } finally {
+    delete process.env.OBSTAT_TEST_SECRET_KEY
+    fs.rmSync(h.root, { recursive: true, force: true })
+  }
 })

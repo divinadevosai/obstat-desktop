@@ -19,6 +19,8 @@ const cppToolsLib = require("./lib/cpptools")
 const divinaLib = require("./lib/divina")
 const deeplink = require("./lib/deeplink")
 const platformLib = require("./lib/platform")
+const { MacUpdater } = require("./lib/macupdate")
+const fs = require("node:fs")
 const { which, withPath } = require("./lib/env")
 const fsp = require("node:fs/promises")
 const { spawn } = require("node:child_process")
@@ -39,17 +41,16 @@ const apps = appsLib.create(home, runtimes, {
   // each app gets the keys shared with it (sandbox tests get none)
   jobEnv: (id) => keys.envFor(id),
 })
-const keys = keysLib.create(home, {
-  available: () => safeStorage.isEncryptionAvailable(),
-  encrypt: (text) => safeStorage.encryptString(text),
-  decrypt: (buf) => safeStorage.decryptString(buf),
-})
-
+// The OS's own protection: Windows DPAPI, the Mac Keychain, or a Linux keyring. On Linux
+// without a keyring, Electron falls back to a built-in key anyone could use, so that counts
+// as no encryption (see lib/platform.js).
 const crypt = {
-  available: () => safeStorage.isEncryptionAvailable(),
+  available: () => platformLib.encryptionReal(safeStorage),
   encrypt: (text) => safeStorage.encryptString(text),
   decrypt: (buf) => safeStorage.decryptString(buf),
+  hint: () => (process.platform === "linux" ? "Obstat uses your desktop's keyring to encrypt them: install GNOME Keyring or KWallet (most desktops have one), sign out and back in, then try again." : ""),
 }
+const keys = keysLib.create(home, crypt)
 const account = accountLib.create(home, crypt)
 const icons = iconsLib.create(home.dir("cache"), (url, opts) => net.fetch(url, opts))
 
@@ -62,8 +63,14 @@ const viewer = viewerLib.create(() => win, { log: (l) => home.log(l), emit: toWi
 // net.fetch only for the download; Divina's port checks use Node's own (see lib/divina.js)
 const divina = divinaLib.create(home, { fetchImpl: (url, opts) => net.fetch(url, opts), log: (l) => home.log(l) })
 
-const updates = updatesLib.create(app.isPackaged && process.platform === "win32" ? require("electron-updater").autoUpdater : null, {
-  enabled: app.isPackaged && process.platform === "win32",
+// Windows, and Linux installed from the AppImage or the .deb: electron-updater (a .deb
+// leaves a package-type file it reads). A Mac: Obstat's own (see lib/macupdate.js).
+const updater = !app.isPackaged ? null
+  : process.platform === "darwin" ? new MacUpdater({ feed: updatesLib.FEED, app, cacheDir: home.dir("cache"), fetchImpl: (url) => net.fetch(url) })
+  : process.platform === "win32" || (process.platform === "linux" && (process.env.APPIMAGE || fs.existsSync(path.join(process.resourcesPath, "package-type")))) ? require("electron-updater").autoUpdater
+  : null
+const updates = updatesLib.create(updater, {
+  enabled: !!updater,
   log: (l) => home.log(l),
   emit: toWindow,
   beforeInstall: () => { apps.stopAll(); sandbox.stopAll(); control.stop(); divina.stop() },

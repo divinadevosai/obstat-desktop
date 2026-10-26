@@ -7,6 +7,10 @@
 //
 //   npx electron e2e/run.js divinadevosai/plazai
 //   npx electron e2e/run.js buildui:lincolnloop/python-qrcode
+//   npx electron e2e/run.js sandbox:divinadevosai/plazai
+//
+// With "sandbox:" the app is tested the way an unreviewed repo is (lib/sandbox.js):
+// on Mac and Linux inside the OS sandbox (lib/confine.js), which the check requires.
 //
 // Under plain Node (no Electron) the page check is an HTTP request instead.
 // Logs and a screenshot go to e2e-out/<app>/. Exits non-zero when the app fails.
@@ -22,6 +26,7 @@ const ROOT = path.join(__dirname, "..")
 const homeLib = require("../lib/home")
 const runtimesLib = require("../lib/runtimes")
 const appsLib = require("../lib/apps")
+const sandboxLib = require("../lib/sandbox")
 const buildUi = require("../lib/buildui")
 const api = require("../lib/api")
 
@@ -32,7 +37,8 @@ const PICKS = JSON.parse(fs.readFileSync(path.join(__dirname, "picks.json"), "ut
 const arg = process.argv.slice(1).find((a) => !a.startsWith("-") && path.resolve(a) !== __filename && path.resolve(a) !== path.dirname(__filename))
 if (!arg) { console.error("Name an app from e2e/apps.json, or buildui:<id>."); process.exit(2) }
 const isBuild = arg.startsWith("buildui:")
-const want = arg.replace(/^buildui:/, "")
+const isSandbox = arg.startsWith("sandbox:")
+const want = arg.replace(/^(buildui|sandbox):/, "")
 const spec = (isBuild ? LIST.buildui : LIST.apps).find((a) => a.id.toLowerCase() === want.toLowerCase())
 if (!spec) { console.error(`${want} isn't in e2e/apps.json.`); process.exit(2) }
 
@@ -107,6 +113,8 @@ async function main() {
     ? { "install.js": `module.exports = {\n  run: [\n    { method: "shell.run", params: { venv: "env", message: [${JSON.stringify(spec.install)}] } },\n  ],\n}\n` }
     : pick.scripts
   const entry = { id, owner, name, url: `https://github.com/${spec.id}`, sha: isBuild ? spec.sha : pick.sha, reviewed: !isBuild, description: spec.about || "", ...(scripts ? { scripts } : {}) }
+
+  if (isSandbox) return sandboxRun(home, runtimes, entry, events, (v) => { echo = v })
 
   // a fresh copy every time
   if (fs.existsSync(apps.appDir(id))) await apps.remove(id)
@@ -185,6 +193,36 @@ async function main() {
     const end = Date.now() + 20000
     while (Date.now() < end && (apps.get(id)?.running || (await listening(url)))) await wait(500)
   }
+  return page
+}
+
+// A sandbox test, as the Sandbox page runs one: cloned, installed and started inside
+// the sandbox, then opened in the viewer, then deleted.
+async function sandboxRun(home, runtimes, entry, events, setEcho) {
+  const sb = sandboxLib.create(home, runtimes, {
+    emit: (e) => { events.push(e); if (e.type === "log") out(e.text) },
+    execPath: process.execPath,
+    workerEnv: electron ? { ELECTRON_RUN_AS_NODE: "1" } : {},
+  })
+  const info = await sb.info()
+  say(`sandbox: ${info.mode}${info.walls ? ` (${info.walls})` : ""}${info.reason ? `, ${info.reason}` : ""}`)
+  if (process.platform !== "win32" && info.mode !== "walls") throw new Error(`no OS sandbox on this ${process.platform} machine: ${info.reason}`)
+  if (sb.get(entry.id)) await sb.remove(entry.id)
+  const { sha, ...unpinned } = entry // a test clones the repo's current code, as for any pasted link
+  const r = await sb.test({ ...unpinned, sha, reviewed: false }, out)
+  if (!r.running) throw new Error(`the sandbox test ${r.ok ? "finished" : `stopped: ${r.error}`} instead of running`)
+  const test = sb.get(entry.id)
+  if (test.mode !== "walls" && process.platform !== "win32") fail(`the test ran in ${test.mode}, not the OS sandbox`)
+  const url = test.running.url
+  if (!url) throw new Error("The test is running but never said its address.")
+  say(`running in the sandbox at ${url}`)
+  setEcho(false)
+  const page = electron ? await viewPage(entry.id, url) : await fetchPage(url)
+  await sb.remove(entry.id)
+  const until = Date.now() + 20000
+  while (Date.now() < until && (await listening(url))) await wait(500)
+  if (await listening(url)) fail(`something still answers at ${url} after the test was deleted`)
+  else say("deleted, and nothing answers at its address any more")
   return page
 }
 
