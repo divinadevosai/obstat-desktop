@@ -1,4 +1,4 @@
-# Builds the Obstat installer for Windows and puts it on the "desktop-preview"
+# Builds Obstat for Windows, Mac and Linux and puts it on the "desktop-preview"
 # release, with latest.yml for the app's self-updater (via obstat.app/update).
 # Obstat-Setup.exe is a copy under a fixed name, for obstat.app's Download button.
 name: Build
@@ -59,3 +59,65 @@ jobs:
           gh release view desktop-preview --json assets --jq '.assets[].name' | while read -r name; do
             case "$name" in Obstat-Setup.exe) ;; Obstat-Setup-*) [ "$name" = "$keep" ] || [ "$name" = "$keep.blockmap" ] || gh release delete-asset desktop-preview "$name" --yes ;; esac
           done
+
+  # Mac: a .dmg for Apple Silicon and one for Intel. Ad-hoc signed (free, no Apple
+  # account), so macOS asks people to confirm the first time they open it.
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm pkg set version=0.2.${{ github.run_number }}
+      - run: npm run dist:mac
+      - name: Check both apps were made and are signed, so Apple Silicon will open them
+        run: |
+          ls dist/Obstat-*-mac-arm64.dmg dist/Obstat-*-mac-x64.dmg
+          for app in dist/mac-arm64/Obstat.app dist/mac/Obstat.app; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            lipo -archs "$app/Contents/MacOS/Obstat"
+          done
+      - name: Publish to the desktop-preview release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view desktop-preview >/dev/null 2>&1 || gh release create desktop-preview --prerelease --target "${{ github.sha }}" --title "Obstat Desktop" --notes "The latest build of Obstat Desktop." || true
+          cp dist/Obstat-*-mac-arm64.dmg dist/Obstat-mac-arm64.dmg
+          cp dist/Obstat-*-mac-x64.dmg dist/Obstat-mac-x64.dmg
+          gh release upload desktop-preview dist/Obstat-mac-arm64.dmg dist/Obstat-mac-x64.dmg --clobber
+
+  # Linux: an AppImage that runs on most distributions, and a .deb for Ubuntu and Debian
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm pkg set version=0.2.${{ github.run_number }}
+      - run: npm run dist:linux
+      - name: Check the packages were made and the .deb opens obstat:// links
+        run: |
+          ls dist/Obstat-*-linux-x86_64.AppImage dist/Obstat-*-linux-amd64.deb
+          dpkg-deb --fsys-tarfile dist/Obstat-*-linux-amd64.deb | tar -xO ./usr/share/applications/obstat.desktop | grep -x 'MimeType=x-scheme-handler/obstat;'
+      - name: Publish to the desktop-preview release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view desktop-preview >/dev/null 2>&1 || gh release create desktop-preview --prerelease --target "${{ github.sha }}" --title "Obstat Desktop" --notes "The latest build of Obstat Desktop." || true
+          cp dist/Obstat-*-linux-x86_64.AppImage dist/Obstat-linux-x86_64.AppImage
+          cp dist/Obstat-*-linux-amd64.deb dist/Obstat-linux-amd64.deb
+          gh release upload desktop-preview dist/Obstat-linux-x86_64.AppImage dist/Obstat-linux-amd64.deb --clobber

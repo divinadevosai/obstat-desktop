@@ -18,6 +18,7 @@ const buildUi = require("./lib/buildui")
 const cppToolsLib = require("./lib/cpptools")
 const divinaLib = require("./lib/divina")
 const deeplink = require("./lib/deeplink")
+const platformLib = require("./lib/platform")
 const { which, withPath } = require("./lib/env")
 const fsp = require("node:fs/promises")
 const { spawn } = require("node:child_process")
@@ -86,6 +87,19 @@ else app.setAsDefaultProtocolClient("obstat")
 
 let win
 
+// A Mac hands over obstat:// links as an event, not as arguments: both when the link
+// starts Obstat (before its window exists) and when it's already open.
+let pendingLink = null
+app.on("open-url", (e, url) => {
+  e.preventDefault()
+  const id = deeplink.appFromUrl(url)
+  if (!id) return
+  if (!win || win.isDestroyed()) { pendingLink = id; return }
+  if (win.isMinimized()) win.restore()
+  win.focus()
+  toWindow({ type: "open-app", id })
+})
+
 // Errors cross to the window as plain messages, not Electron's wrapped ones.
 const answer = (fn) => async (_e, ...args) => {
   try { return { data: await fn(...args) } } catch (err) { return { error: err.message } }
@@ -117,7 +131,8 @@ function createWindow() {
     return { action: "deny" }
   })
   // started by an obstat:// link: open straight on that app's page
-  const first = deeplink.fromArgv(process.argv)
+  const first = pendingLink || deeplink.fromArgv(process.argv)
+  pendingLink = null
   win.loadURL(first ? `${START}#/app/${first.split("/").map(encodeURIComponent).join("/")}` : START)
 }
 
@@ -129,7 +144,10 @@ app.on("second-instance", (_e, argv) => {
   if (id) toWindow({ type: "open-app", id })
 })
 
-app.whenReady().then(() => {
+// on a Mac, find what the person's own shell finds (Homebrew, npm tools) before anything runs
+const shellPath = process.platform === "darwin" ? platformLib.loginPath().then((p) => { process.env.PATH = p }).catch(() => {}) : Promise.resolve()
+
+app.whenReady().then(() => shellPath).then(() => {
   protocol.handle("app", (req) => {
     const { host, pathname } = new URL(req.url)
     const file = path.normalize(path.join(APP_DIR, decodeURIComponent(pathname)))
@@ -227,12 +245,15 @@ app.whenReady().then(() => {
     const err = await shell.openPath(home.dir(name))
     if (err) throw new Error(err)
   })
-  // Autolaunch: start Obstat when the person signs in to Windows
-  handle("autolaunch", () => app.getLoginItemSettings().openAtLogin)
+  // Autolaunch: start Obstat when the person signs in. Electron does this on Windows
+  // and Mac; Linux gets an autostart file.
+  const linuxStart = process.platform === "linux" ? platformLib.autostart() : null
+  handle("autolaunch", () => (linuxStart ? linuxStart.enabled() : app.getLoginItemSettings().openAtLogin))
   handle("set-autolaunch", (on) => {
-    app.setLoginItemSettings({ openAtLogin: !!on })
-    home.log(`start with Windows ${on ? "on" : "off"}`)
-    return app.getLoginItemSettings().openAtLogin
+    if (linuxStart) linuxStart.set(!!on)
+    else app.setLoginItemSettings({ openAtLogin: !!on })
+    home.log(`start at sign-in ${on ? "on" : "off"}`)
+    return linuxStart ? linuxStart.enabled() : app.getLoginItemSettings().openAtLogin
   })
   ipcMain.handle("obstat:open-external", (_e, url) => {
     if (api.isSafeExternal(url) || api.isLocalUrl(url)) return shell.openExternal(url)
@@ -451,13 +472,18 @@ const PROMPT_FLAG = { gemini: "-i " }
 // Opens a folder in an editor, or a terminal tool in it. `prompt` is fixed text, never the person's.
 function openIn(tool, cwd, prompt) {
   const cmd = prompt && tool.kind === "Terminal" ? `${tool.cmd} ${PROMPT_FLAG[tool.id] || ""}"${prompt}"` : tool.cmd
-  const child = tool.kind === "Editor"
-    ? process.platform === "win32"
+  let child
+  if (tool.kind === "Editor") {
+    child = process.platform === "win32"
       ? spawn("cmd.exe", ["/d", "/c", tool.cmd, cwd], { detached: true, stdio: "ignore", windowsHide: true })
       : spawn(tool.found, [cwd], { detached: true, stdio: "ignore" })
-    : process.platform === "win32"
-      ? spawn("cmd.exe", [`/c start "" cmd.exe /k ${cmd}`], { cwd, detached: true, stdio: "ignore", windowsVerbatimArguments: true })
-      : spawn("x-terminal-emulator", ["-e", "sh", "-c", cmd], { cwd, detached: true, stdio: "ignore" })
+  } else if (process.platform === "win32") {
+    child = spawn("cmd.exe", [`/c start "" cmd.exe /k ${cmd}`], { cwd, detached: true, stdio: "ignore", windowsVerbatimArguments: true })
+  } else {
+    const t = platformLib.terminal(cmd, cwd)
+    if (!t) throw new Error("Obstat couldn't find a terminal app to open. Install one (like GNOME Terminal or Konsole) and try again.")
+    child = spawn(t.file, t.args, { cwd, detached: true, stdio: "ignore" })
+  }
   child.on("error", () => {})
   child.unref()
 }

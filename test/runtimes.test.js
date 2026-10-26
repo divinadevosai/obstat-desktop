@@ -85,3 +85,24 @@ test("two runs that need the same runtime share one download", async () => {
     Object.assign(spec, saved)
   }
 })
+
+test("Macs get the build for their chip, and Linux on ARM uses the PC's own", () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-")))
+  const urls = (opts) => { const r = runtimes.create(h, opts); return Object.keys(runtimes.RUNTIMES).map((n) => r.status()[n].needed && n) }
+  const pick = (platform, arch, name) => {
+    const all = runtimes.RUNTIMES[name]
+    return all[`${platform}-${arch}`] || all[platform]
+  }
+  assert.match(pick("darwin", "arm64", "python").url, /aarch64-apple-darwin/)
+  assert.match(pick("darwin", "x64", "python").url, /x86_64-apple-darwin/)
+  assert.match(pick("darwin", "arm64", "node").url, /darwin-arm64/)
+  assert.match(pick("darwin", "x64", "uv").url, /x86_64-apple-darwin/)
+  for (const s of ["darwin-arm64", "darwin-x64"]) for (const n of ["python", "node", "uv"]) assert.match(runtimes.RUNTIMES[n][s].sha256, /^[0-9a-f]{64}$/)
+  assert.deepEqual(urls({ platform: "darwin", arch: "arm64" }), ["python", "node", "uv", false, false])
+  // Linux on ARM: no x64 downloads, so apps use the system's python3 and node
+  const arm = runtimes.create(h, { platform: "linux", arch: "arm64" })
+  assert.deepEqual(urls({ platform: "linux", arch: "arm64" }), [false, false, false, false, false])
+  assert.equal(arm.python(), "python3")
+  // Windows on ARM runs the x64 builds
+  assert.equal(runtimes.create(h, { platform: "win32", arch: "arm64" }).status().python.needed, true)
+})

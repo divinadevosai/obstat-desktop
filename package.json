@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Install and run reviewed AI apps with one click.",
+  "desktopName": "obstat.desktop",
   "author": "SWE3WE <hello@swe3we.dev>",
   "license": "MIT",
   "repository": "github:divinadevosai/obstat-desktop",
@@ -14,7 +15,11 @@
     "start": "electron .",
     "predist": "npm run sync",
     "dist": "electron-builder --win --publish never",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "predist:mac": "npm run sync",
+    "predist:linux": "npm run sync"
   },
   "build": {
     "appId": "dev.swe3we.obstat",
@@ -51,6 +56,44 @@
       "oneClick": true,
       "perMachine": false,
       "artifactName": "Obstat-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "artifactName": "Obstat-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Development",
+      "icon": "build/icon.png",
+      "maintainer": "SWE3WE <hello@swe3we.dev>",
+      "synopsis": "Install and run AI apps with one click",
+      "artifactName": "Obstat-${version}-linux-${arch}.${ext}",
+      "syncDesktopName": true
     },
     "protocols": [
       {

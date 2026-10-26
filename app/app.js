@@ -546,7 +546,7 @@ const views = {
       ? el("p", { class: "note ok-note", text: "This PC has Windows Sandbox, so tests run in a throwaway copy of Windows that can't see your files and is wiped when you delete the test. It has no NVIDIA GPU inside, so GPU apps test with their CPU version." })
       : box.platform === "win32"
         ? el("p", { class: "card-err", text: "Windows Sandbox isn't turned on here, so tests run in a separate test folder instead. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing. On Windows Pro you can turn on Windows Sandbox in \"Turn Windows features on or off\". Windows Home doesn't have it." })
-        : el("p", { class: "card-err", text: "Tests on this PC run in a separate test folder. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing." })
+        : el("p", { class: "card-err", text: "Tests on this computer run in a separate test folder. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing." })
     return page("Sandbox", "Try a repo nobody has reviewed without risking your files.",
       el("ol", { class: "steps-list" },
         el("li", {}, el("b", { text: "Test it" }), el("span", { text: box.mode === "windows" ? "The app installs and runs in Windows Sandbox, which can't see your files." : "The app installs and runs in its own test folder." })),
@@ -686,9 +686,9 @@ const views = {
 
   autolaunch: async () => {
     const on = await ask("autolaunch")
-    return page("Autolaunch", "Choose what starts by itself when you sign in to Windows.",
+    return page("Autolaunch", "Choose what starts by itself when you sign in.",
       el("dl", { class: "rows" },
-        el("div", {}, el("dt", { text: "Start Obstat with Windows" }),
+        el("div", {}, el("dt", { text: "Start Obstat when I sign in" }),
           el("dd", {}, toggle(on, async (v) => ask("setAutolaunch", v))))),
       el("div", { class: "section-h" }, el("h2", { text: "Installed apps" })),
       ...(await ask("apps").then((list) => list.filter((a) => a.installed)).then((list) => list.length
@@ -1144,7 +1144,7 @@ function toolsView() {
       t("#/disk", "disk", "Disk space", "See what each app uses and get space back."),
       t("#/logs", "logs", "Logs", "Every command Obstat ran, for when something breaks."),
       t("#/server", "server", "Home Server", "Open your running apps from your phone."),
-      t("#/autolaunch", "power", "Autolaunch", "Start Obstat and your apps when Windows starts.")))
+      t("#/autolaunch", "power", "Autolaunch", "Start Obstat and your apps when you sign in.")))
 }
 
 function helpView() {
