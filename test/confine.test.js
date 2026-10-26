@@ -79,7 +79,7 @@ process.stdout.write(JSON.stringify({
   writeInside: can(() => fs.writeFileSync(path.join(inside, "ok.txt"), "x")),
   readRuntime: can(() => fs.readFileSync(runtime)),
   signalOther: can(() => process.kill(Number(otherPid), "SIGTERM")),
-  signalOwn: (() => { const c = require("node:child_process").spawn("sleep", ["30"], { stdio: "ignore" }); const ok = can(() => process.kill(c.pid, "SIGTERM")); return ok })(),
+  signalOwn: (() => { const c = require("node:child_process").spawn("sleep", ["30"], { stdio: "ignore" }); c.unref(); const ok = can(() => process.kill(c.pid, "SIGTERM")); return ok })(),
   procs,
 }))
 `
