@@ -39,7 +39,7 @@ test("Apple's sandbox: paths go in as parameters, never into the rules", () => {
   assert.match(profile, /\(deny file-read\* \(subpath "\/Volumes"\) \(subpath "\/Users"\)/)
   assert.match(profile, /com\.apple\.SecurityServer/)
   // no program can be signalled: Obstat ends a test's processes itself
-  assert.ok(profile.includes("(deny signal (target others))") && !/allow signal/.test(profile))
+  assert.ok(profile.includes("(deny signal)") && !/allow signal \(target (others|same-sandbox|children)/.test(profile))
   // allows come after the denies they make exceptions to (later rules win)
   assert.ok(profile.indexOf('(param "WRITE0")') > profile.indexOf('(subpath "/Users")'))
 })
