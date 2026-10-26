@@ -98,7 +98,9 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
       ] }`,
     })
     assert.equal((await sb.info()).mode, "walls")
-    const r = await sb.test(entry(repo))
+    // a test that never finishes says what it got to, rather than only timing out
+    let timer
+    const r = await Promise.race([sb.test(entry(repo)), new Promise((res) => { timer = setTimeout(() => res({ timedOut: true }), 70000) })]).finally(() => clearTimeout(timer))
     assert.equal(r.running, true, `${JSON.stringify(r)}\n${log()}`)
     const dir = sb.appDir("someone/demo")
     const said = (f) => fs.readFileSync(path.join(dir, f), "utf8").trim()
