@@ -116,3 +116,14 @@ test("a test sees only a short list of Obstat's settings: no exported secrets, n
   const env = confine.sandboxEnv({ PATH: "/usr/bin", LANG: "en_GB.UTF-8", LC_ALL: "C", HTTPS_PROXY: "http://p:3128", no_proxy: "localhost", OPENAI_API_KEY: "sk-x", GITHUB_TOKEN: "ghp_x", DISPLAY: ":0", WAYLAND_DISPLAY: "wayland-0", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus", SSH_AUTH_SOCK: "/tmp/ssh-x/agent", AWS_SECRET_ACCESS_KEY: "x", HOME: "/home/a" })
   assert.deepEqual(Object.keys(env).sort(), ["HTTPS_PROXY", "LANG", "LC_ALL", "PATH", "no_proxy"])
 })
+
+test("Apple's sandbox: the folders above what a test may use can be looked up, not read", { skip: process.platform === "win32" }, () => {
+  const args = confine.seatbeltArgs({ writable: ["/Users/a/obstat/sandboxes/x"], readable: ["/Applications/Obstat.app"], hide: [] })
+  const profile = args[args.indexOf("-p") + 1]
+  const ups = args.filter((a, i) => args[i - 1] === "-D" && a.startsWith("UP")).map((a) => a.split("=")[1])
+  for (const d of ["/Users/a/obstat/sandboxes", "/Users/a/obstat", "/Users/a", "/Users", "/Applications"]) assert.ok(ups.includes(d), d)
+  assert.ok(!ups.includes("/"))
+  assert.match(profile, /\(allow file-read-metadata \(literal \(param "UP0"\)\)\)/)
+  // looking up isn't reading: the home folder's files stay unreadable
+  assert.ok(!/allow file-read\* \(subpath \(param "UP/.test(profile))
+})
