@@ -84,6 +84,8 @@ jobs:
             codesign --verify --deep --strict --verbose=2 "$app"
             lipo -archs "$app/Contents/MacOS/Obstat"
           done
+      - name: Update an installed copy with this build, the way the Mac updater does
+        run: node e2e/macupdate-check.js
       - name: Publish to the desktop-preview release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
