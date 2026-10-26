@@ -69,6 +69,10 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
   fs.writeFileSync(path.join(h.root, "keys.json"), '[{"name":"OPENAI_API_KEY"}]')
   fs.writeFileSync(path.join(h.root, "control.json"), '{"token":"t"}')
   const escaped = path.join(os.homedir(), `.obstat-escaped-${path.basename(h.root)}`)
+  // another app's server on this computer (ComfyUI, say), which a test mustn't reach
+  const victim = require("node:http").createServer((q, r) => r.end("secret page")).listen(0, "127.0.0.1")
+  await new Promise((r) => victim.once("listening", r))
+  const reach = `"${process.execPath}" -e "fetch('http://127.0.0.1:${victim.address().port}/').then((r) => r.text()).then((t) => console.log(t), () => console.log('blocked'))" > victim.txt`
   try {
     const events = []
     const sb = sandboxLib.create(h, runtimes, { emit: (e) => events.push(e), platform: process.platform, sandboxExe: null })
@@ -81,6 +85,7 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
         ${JSON.stringify(steal(path.join(h.root, "control.json"), "control.txt"))},
         ${JSON.stringify(`(echo x > '${escaped}' 2>/dev/null && echo yes || echo no) > escape.result`)},
         "echo $OBSTAT_SANDBOX > mode.txt",
+        ${JSON.stringify(reach)},
       ] } }] }`,
       "start.js": `module.exports = { daemon: true, run: [
         { method: "shell.run", params: { message: [${JSON.stringify(`"${process.execPath}" -e "require('http').createServer((q, r) => r.end('ok')).listen(Number(process.env.PORT), '127.0.0.1', () => console.log('at http://127.0.0.1:' + process.env.PORT))"`)}], on: [{ event: "/(http:\\/\\/[0-9.:]+)/", done: true }] } },
@@ -98,6 +103,7 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
     assert.equal(said("escape.result"), "no", "wrote outside its folder")
     assert.equal(fs.existsSync(escaped), false)
     assert.equal(said("mode.txt"), "walls")
+    assert.equal(said("victim.txt"), "blocked", "reached another app's server on this computer")
     // and it still works: its page answers from outside the sandbox
     const page = sb.get("someone/demo")
     assert.equal(page.mode, "walls")
@@ -107,6 +113,7 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
     // Stop ended everything inside: nothing answers any more
     await assert.rejects(fetch(page.running.url))
   } finally {
+    victim.close()
     fs.rmSync(secret, { force: true })
     fs.rmSync(escaped, { force: true })
     fs.rmSync(h.root, { recursive: true, force: true })
@@ -168,6 +175,7 @@ test("on Mac and Linux a test doesn't get Obstat's own environment (exported key
     assert.doesNotMatch(seen, /sk-should-not-leak/)
     assert.match(seen, /^HOME=.*someone-demo\.home$/m)
     assert.match(seen, /^OBSTAT_SANDBOX=walls$/m)
+    await sb.remove("someone/demo")
   } finally {
     delete process.env.OBSTAT_TEST_SECRET_KEY
     fs.rmSync(h.root, { recursive: true, force: true })

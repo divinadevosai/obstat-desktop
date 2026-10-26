@@ -11,12 +11,22 @@ test("bubblewrap: the home folder and /tmp are emptied, only the test's folders 
   const args = confine.bwrapArgs({ writable: ["/home/a/obstat/sandboxes/x"], readable: ["/home/a/obstat/bin"], hide: ["/home/a"], exists: () => true })
   const at = (flag, p) => args.findIndex((a, i) => a === flag && args[i + 1] === p)
   assert.ok(at("--ro-bind", "/") >= 0)
-  assert.ok(at("--tmpfs", "/home/a") >= 0 && at("--tmpfs", "/tmp") >= 0 && at("--tmpfs", "/run/user") >= 0)
+  // /home/a goes with /home, which is emptied whole
+  assert.ok(at("--tmpfs", "/home") >= 0 && at("--tmpfs", "/tmp") >= 0 && at("--tmpfs", "/run/user") >= 0 && at("--tmpfs", "/run/dbus") >= 0)
+  assert.equal(at("--tmpfs", "/home/a"), -1)
   // the binds come after the folders they sit in are emptied, or they'd be hidden too
-  assert.ok(at("--bind", "/home/a/obstat/sandboxes/x") > at("--tmpfs", "/home/a"))
-  assert.ok(at("--ro-bind-try", "/home/a/obstat/bin") > at("--tmpfs", "/home/a"))
+  assert.ok(at("--bind", "/home/a/obstat/sandboxes/x") > at("--tmpfs", "/home"))
+  assert.ok(at("--ro-bind-try", "/home/a/obstat/bin") > at("--tmpfs", "/home"))
+  // and then made read-only, except the throwaway /tmp
+  assert.ok(at("--remount-ro", "/home") > at("--bind", "/home/a/obstat/sandboxes/x"))
+  assert.equal(at("--remount-ro", "/tmp"), -1)
   for (const f of ["--die-with-parent", "--unshare-pid", "--new-session"]) assert.ok(args.includes(f), f)
-  assert.ok(!args.includes("--unshare-net"), "installs need the network")
+  assert.ok(!args.includes("--unshare-net"))
+  // a network of its own: all of /run goes (D-Bus, the Docker socket), so /run/user needn't
+  const own = confine.bwrapArgs({ writable: ["/tmp/obstat-net-x"], ownNetwork: true, exists: () => true })
+  assert.ok(own.includes("--unshare-net"))
+  assert.ok(own.join(" ").includes("--tmpfs /run "))
+  assert.ok(!own.join(" ").includes("--tmpfs /run/user"))
 })
 
 test("Apple's sandbox: paths go in as parameters, never into the rules", () => {
