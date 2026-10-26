@@ -10,8 +10,6 @@ name: Apps on Mac and Linux
 
 on:
   pull_request:
-  push:
-    branches: [mac-linux] # TEMP: until this workflow is on main
   workflow_dispatch:
     inputs:
       apps:
