@@ -74,6 +74,8 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
   await new Promise((r) => victim.once("listening", r))
   const reach = `"${process.execPath}" -e "fetch('http://127.0.0.1:${victim.address().port}/').then((r) => r.text()).then((t) => console.log(t), () => console.log('blocked'))" > victim.txt`
   let sb
+  // an app checking its own server (as Gradio does), which a test must still be able to
+  const self = `"${process.execPath}" -e "const s = require('http').createServer((q, r) => r.end('ok')).listen(Number(process.env.PORT), '127.0.0.1', () => fetch('http://127.0.0.1:' + process.env.PORT + '/').then((r) => r.text()).then((t) => console.log(t), (e) => console.log('blocked ' + e.cause?.code)).finally(() => s.close()))" > self.txt`
   try {
     const events = []
     sb = sandboxLib.create(h, runtimes, { emit: (e) => events.push(e), platform: process.platform, sandboxExe: null })
@@ -87,6 +89,8 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
         ${JSON.stringify(`(echo x > '${escaped}' 2>/dev/null && echo yes || echo no) > escape.result`)},
         "echo $OBSTAT_SANDBOX > mode.txt",
         ${JSON.stringify(reach)},
+        ${JSON.stringify(self)},
+        "echo $GRADIO_SERVER_PORT-$PORT > gradio.txt",
       ] } }] }`,
       "start.js": `module.exports = { daemon: true, run: [
         { method: "shell.run", params: { message: [${JSON.stringify(`"${process.execPath}" -e "require('http').createServer((q, r) => r.end('ok')).listen(Number(process.env.PORT), '127.0.0.1', () => console.log('at http://127.0.0.1:' + process.env.PORT))"`)}], on: [{ event: "/(http:\\/\\/[0-9.:]+)/", done: true }] } },
@@ -105,6 +109,8 @@ test("on Mac and Linux a test runs inside the OS sandbox: it can't read your fil
     assert.equal(fs.existsSync(escaped), false)
     assert.equal(said("mode.txt"), "walls")
     assert.equal(said("victim.txt"), "blocked", "reached another app's server on this computer")
+    assert.equal(said("self.txt"), "ok", "couldn't reach its own server")
+    assert.match(said("gradio.txt"), /^(\d+)-\1$/, "Gradio isn't told the app's own port")
     // and it still works: its page answers from outside the sandbox
     const page = sb.get("someone/demo")
     assert.equal(page.mode, "walls")

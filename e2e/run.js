@@ -264,7 +264,9 @@ async function viewPage(id, url) {
   }
   await wait(3000)
   stats = (await wc.executeJavaScript(STATS).catch(() => null)) || stats
-  const shot = await wc.capturePage()
+  // under xvfb (no GPU) Chromium's GPU process sometimes fails to start the first time
+  // and is started again: the screenshot is tried once more after that
+  const shot = await wc.capturePage().catch(async (err) => { say(`screenshot: ${err.message}, trying again`); await wait(3000); return wc.capturePage() })
   fs.writeFileSync(path.join(OUT, "page.png"), shot.toPNG())
   const colours = distinctColours(shot)
   say(`page: "${stats?.title}" at ${wc.getURL()}, ${stats?.visible} visible elements, ${stats?.controls} controls, ${colours} colours`)
