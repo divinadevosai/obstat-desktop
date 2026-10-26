@@ -15,7 +15,7 @@
     "start": "electron .",
     "predist": "npm run sync",
     "dist": "electron-builder --win --publish never",
-    "test": "node --test test/*.test.js",
+    "test": "node --test --test-timeout=120000 test/*.test.js",
     "dist:mac": "electron-builder --mac --publish never",
     "dist:linux": "electron-builder --linux --publish never",
     "predist:mac": "npm run sync",

@@ -25,7 +25,7 @@ function ask(sock, head) {
   })
 }
 
-test("the proxy refuses anything on this computer or the local network, by address or by name", async () => {
+test("the proxy refuses anything on this computer or the local network, by address or by name", { skip: process.platform === "win32" && "Unix sockets: the proxy is only used in the Linux sandbox", timeout: 20000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "obstat-net-"))
   const sock = path.join(dir, "out.sock")
   // a server on this computer the test would like to reach (another app's, say)
@@ -58,7 +58,7 @@ test("the proxy refuses anything on this computer or the local network, by addre
   }
 })
 
-test("Obstat reaches the app's own port inside the test through in.sock", async () => {
+test("Obstat reaches the app's own port inside the test through in.sock", { skip: process.platform === "win32" && "Unix sockets: the proxy is only used in the Linux sandbox", timeout: 20000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "obstat-net-"))
   // stands in for the app's server on the test's own localhost
   const app = http.createServer((q, r) => r.end(`app page ${q.url}`)).listen(0, "127.0.0.1")
