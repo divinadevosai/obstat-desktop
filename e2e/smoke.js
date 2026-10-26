@@ -66,6 +66,17 @@ async function sandbox() {
   const w = await confine.detect()
   if (!w.kind) return fail(`no OS sandbox: ${w.reason}`)
   say(`sandbox: ${w.kind} works`)
+  // the worker runs on Obstat's Electron (as Node), so that has to start inside it too
+  let electron
+  try { electron = require("electron") } catch { return say("sandbox: no Electron here to check") }
+  const dir = fs.mkdtempSync(path.join(os.homedir(), ".obstat-smoke-"))
+  try {
+    const wrapped = confine.wrap(w, { writable: [dir], readable: confine.programPaths({ execPath: electron, resourcesPath: null, libDir: __dirname }), hide: [os.homedir()], ownNetwork: w.kind === "bwrap" }, electron, ["-e", "require('node:fs').writeFileSync(process.argv[1] + '/ok', 'yes'); console.log('electron ok')", dir])
+    const res = await run(wrapped.file, wrapped.args, { ...confine.sandboxEnv(process.env), ELECTRON_RUN_AS_NODE: "1", HOME: dir })
+    if (res.error) fail(`Electron didn't start inside the sandbox: ${res.error}`)
+    else if (!fs.existsSync(path.join(dir, "ok"))) fail(`Electron ran inside the sandbox but couldn't write its folder: ${res.out}`)
+    else say(`sandbox: Electron runs inside it (${res.out})`)
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
 async function chat() {

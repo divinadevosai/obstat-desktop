@@ -43,8 +43,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # Electron here comes from npm, without the AppArmor profile the .deb installs, so
+      # Ubuntu's limit on user namespaces is lifted on this test machine (build.yml checks
+      # the .deb's own profile on a stock Ubuntu)
       - if: runner.os == 'Linux'
-        run: sudo apt-get install -y bubblewrap
+        run: sudo apt-get install -y bubblewrap && sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm ci
       - run: node e2e/smoke.js
 
@@ -83,7 +86,7 @@ jobs:
           node-version: 22
           cache: npm
       - if: steps.want.outputs.run && runner.os == 'Linux'
-        run: sudo apt-get install -y bubblewrap xvfb
+        run: sudo apt-get install -y bubblewrap xvfb && sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - if: steps.want.outputs.run
         run: npm ci
       - name: Install, start and open the app in Obstat (Mac)

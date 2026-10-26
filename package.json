@@ -19,7 +19,7 @@
     "dist:mac": "electron-builder --mac --publish never",
     "dist:linux": "electron-builder --linux --publish never",
     "predist:mac": "npm run sync",
-    "predist:linux": "npm run sync"
+    "predist:linux": "npm run sync && node scripts/bwrap.js"
   },
   "build": {
     "appId": "dev.swe3we.obstat",
@@ -100,7 +100,17 @@
       "maintainer": "SWE3WE <hello@swe3we.dev>",
       "synopsis": "Install and run AI apps with one click",
       "artifactName": "Obstat-${version}-linux-${arch}.${ext}",
-      "syncDesktopName": true
+      "syncDesktopName": true,
+      "extraResources": [
+        {
+          "from": "build/linux/bwrap",
+          "to": "bwrap"
+        },
+        {
+          "from": "build/linux/bwrap-LICENSE.txt",
+          "to": "bwrap-LICENSE.txt"
+        }
+      ]
     },
     "protocols": [
       {
@@ -109,7 +119,10 @@
           "obstat"
         ]
       }
-    ]
+    ],
+    "deb": {
+      "appArmorProfile": "build/linux/apparmor-profile.tpl"
+    }
   },
   "devDependencies": {
     "electron": "^44.9.0",

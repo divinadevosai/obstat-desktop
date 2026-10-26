@@ -43,14 +43,21 @@ test("Apple's sandbox: paths go in as parameters, never into the rules", () => {
 })
 
 test("without bubblewrap, or where it can't run, tests fall back with a reason and a fix", async () => {
-  const none = await confine.detect({ platform: "linux", exists: () => false })
+  const none = await confine.detect({ platform: "linux", bundled: null, exists: () => false })
   assert.equal(none.kind, null)
   assert.match(none.fix, /sudo apt install bubblewrap/)
-  const blocked = await confine.detect({ platform: "linux", exists: (f) => f === "/usr/bin/bwrap", run: (_f, _a, _o, cb) => cb(new Error("x"), "", "bwrap: setting up uid map: Permission denied") })
+  const blocked = await confine.detect({ platform: "linux", bundled: null, exists: (f) => f === "/usr/bin/bwrap", run: (_f, _a, _o, cb) => cb(new Error("x"), "", "bwrap: setting up uid map: Permission denied") })
   assert.equal(blocked.kind, null)
   assert.match(blocked.reason, /Permission denied/)
-  const ok = await confine.detect({ platform: "linux", exists: (f) => f === "/usr/bin/bwrap", run: (_f, _a, _o, cb) => cb(null, "", "") })
+  const ok = await confine.detect({ platform: "linux", exists: (f) => f === "/usr/bin/bwrap", run: (_f, _a, _o, cb) => cb(null, "", ""), bundled: null })
   assert.deepEqual(ok, { kind: "bwrap", file: "/usr/bin/bwrap" })
+  // Obstat's own comes first; when it can't run, the system's is tried
+  const tried = []
+  const both = await confine.detect({ platform: "linux", bundled: "/opt/Obstat/resources/bwrap", exists: () => true, run: (f, _a, _o, cb) => { tried.push(f); f.startsWith("/opt") ? cb(new Error("x"), "", "denied") : cb(null, "", "") } })
+  assert.equal(tried[0], "/opt/Obstat/resources/bwrap")
+  assert.deepEqual(both, { kind: "bwrap", file: "/usr/bin/bwrap" })
+  const own = await confine.detect({ platform: "linux", bundled: "/opt/Obstat/resources/bwrap", exists: () => true, run: (_f, _a, _o, cb) => cb(null, "", "") })
+  assert.equal(own.file, "/opt/Obstat/resources/bwrap")
   assert.equal((await confine.detect({ platform: "win32" })).kind, null)
 })
 

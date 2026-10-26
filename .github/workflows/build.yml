@@ -102,9 +102,11 @@ jobs:
             case "$name" in Obstat-*-mac-*.zip|Obstat-*-mac-*.zip.blockmap) case "$name" in Obstat-$keep-mac-*) ;; *) gh release delete-asset desktop-preview "$name" --yes ;; esac ;; esac
           done
 
-  # Linux: an AppImage that runs on most distributions, and a .deb for Ubuntu and Debian
+  # Linux: an AppImage that runs on most distributions, and a .deb for Ubuntu and Debian.
+  # Built on the oldest Ubuntu Obstat supports, so the bubblewrap it bundles runs there
+  # and on everything newer.
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,6 +126,12 @@ jobs:
           ls dist/Obstat-*-linux-x86_64.AppImage dist/Obstat-*-linux-amd64.deb dist/latest-linux.yml
           grep -q 'linux-amd64.deb' dist/latest-linux.yml
           dpkg-deb --fsys-tarfile dist/Obstat-*-linux-amd64.deb | tar -xO ./usr/share/applications/obstat.desktop | grep -x 'MimeType=x-scheme-handler/obstat;'
+          dpkg-deb --fsys-tarfile dist/Obstat-*-linux-amd64.deb | tar -t | grep -x './opt/Obstat/resources/bwrap'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: dist/Obstat-*-linux-amd64.deb
+          retention-days: 3
       - name: Publish to the desktop-preview release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
@@ -140,3 +148,24 @@ jobs:
           gh release view desktop-preview --json assets --jq '.assets[].name' | while read -r name; do
             case "$name" in Obstat-*.*.*-linux-*) case "$name" in Obstat-$keep-linux-*) ;; *) gh release delete-asset desktop-preview "$name" --yes ;; esac ;; esac
           done
+
+  # Ubuntu 24.04 and later stop programs making user namespaces unless an AppArmor
+  # profile allows it. Install the real .deb there and check that its profile lets
+  # Obstat's own bubblewrap make a sandbox, for an ordinary user.
+  linux-deb-check:
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-deb
+      - name: Install the .deb and make a sandbox with Obstat's bubblewrap
+        run: |
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          sudo apt-get install -y ./Obstat-*-linux-amd64.deb
+          sudo aa-status | grep -q 'obstat-desktop-bwrap'
+          # what lib/confine.js asks for: its own network and processes, a read-only system
+          /opt/Obstat/resources/bwrap --die-with-parent --unshare-pid --unshare-net --unshare-ipc --ro-bind / / --dev /dev --proc /proc --tmpfs /home /bin/sh -c 'test ! -e /home/runner && echo sandbox ok'
+          # and the system's own bubblewrap, without a profile, can't (so the check means something)
+          sudo apt-get install -y bubblewrap
+          ! /usr/bin/bwrap --unshare-net --ro-bind / / true 2>/dev/null
