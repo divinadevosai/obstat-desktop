@@ -65,7 +65,7 @@ jobs:
   # Mac: a .dmg for Apple Silicon and one for Intel. Ad-hoc signed (free, no Apple
   # account), so macOS asks people to confirm the first time they open it.
   mac:
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
