@@ -355,7 +355,7 @@ app.whenReady().then(() => shellPath).then(() => {
   })
   // Sandbox: test a repo before it's installed for real
   handle("sandbox-info", () => sandbox.info())
-  handle("sandboxes", () => sandbox.list())
+  handle("sandboxes", () => sandbox.listed())
   handle("sandbox-test", async (id) => {
     const entry = await source(id)
     home.log(`testing ${id} in the sandbox (${sandbox.mode()})`)
