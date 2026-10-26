@@ -48,10 +48,54 @@ test("a download with the wrong checksum is thrown away", async () => {
   assert.equal(fs.readdirSync(h.dir("cache")).length, 0)
 })
 
-test("git isn't downloaded on Linux", () => {
+test("Mac and Linux get Obstat's own git too, set up to run from its folder", () => {
   const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-")))
-  const r = runtimes.create(h, { platform: "linux" })
-  assert.deepEqual(r.status().git, { version: "2.47.0", needed: false, ready: true })
+  for (const [platform, arch] of [["linux", "x64"], ["darwin", "arm64"], ["darwin", "x64"]]) {
+    const r = runtimes.create(h, { platform, arch })
+    assert.equal(r.status().git.needed, true, platform + arch)
+    assert.match(r.git(), /bin[\\/]git$/)
+    assert.deepEqual(r.gitEnv(), {}, "nothing until it's downloaded")
+  }
+  // once it's there: the dugite settings, and on Linux the PC's certificates first
+  const r = runtimes.create(h, { platform: "linux", arch: "x64" })
+  const d = r.dir("git")
+  fs.mkdirSync(path.join(d, "bin"), { recursive: true })
+  fs.writeFileSync(path.join(d, "bin", "git"), "")
+  const env = r.gitEnv({}, (f) => f === "/etc/pki/tls/certs/ca-bundle.crt")
+  assert.equal(env.GIT_EXEC_PATH, path.join(d, "libexec", "git-core"))
+  assert.equal(env.GIT_CONFIG_SYSTEM, path.join(d, "etc", "gitconfig"))
+  assert.equal(env.PREFIX, d)
+  assert.equal(env.GIT_SSL_CAINFO, "/etc/pki/tls/certs/ca-bundle.crt")
+  assert.equal(r.gitEnv({}, () => false).GIT_SSL_CAINFO, path.join(d, "ssl", "cacert.pem"))
+  assert.equal(r.gitEnv({ GIT_SSL_CAINFO: "/mine.pem" }, () => true).GIT_SSL_CAINFO, undefined, "a person's own setting wins")
+  // Windows' MinGit needs none of this
+  assert.deepEqual(runtimes.create(h, { platform: "win32" }).gitEnv(), {})
+})
+
+// (runs shell scripts as stand-ins for ffmpeg, and Windows has its own ffmpeg download)
+test("ffmpeg on Mac and Linux: two gzipped programs, each checked, unpacked and made runnable", { skip: process.platform === "win32" }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const zlib = require("node:zlib")
+  const files = { "ffmpeg-linux-x64.gz": zlib.gzipSync("#!/bin/sh\necho ffmpeg\n"), "ffprobe-linux-x64.gz": zlib.gzipSync("#!/bin/sh\necho ffprobe\n") }
+  const sha = (b) => crypto.createHash("sha256").update(b).digest("hex")
+  const spec = runtimes.RUNTIMES.ffmpeg.linux
+  const saved = spec.parts.map((p) => p.sha256)
+  spec.parts.forEach((p) => { p.sha256 = sha(files[path.basename(p.url)]) })
+  try {
+    const r = runtimes.create(h, { platform: "linux", arch: "x64", fetchImpl: async (url) => serve(files[path.basename(url)])() })
+    await r.ensure("ffmpeg")
+    for (const n of ["ffmpeg", "ffprobe"]) {
+      const f = path.join(r.dir("ffmpeg"), n)
+      assert.equal(execFileSync(f, { encoding: "utf8" }).trim(), n)
+      assert.ok(fs.statSync(f).mode & 0o100, `${n} is runnable`)
+    }
+    assert.equal(r.exe("ffmpeg"), path.join(r.dir("ffmpeg"), "ffmpeg"))
+    // a swapped file is refused and nothing is installed
+    const h2 = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h2.ensure()
+    const bad = runtimes.create(h2, { platform: "linux", arch: "x64", fetchImpl: async () => serve(zlib.gzipSync("evil"))() })
+    await assert.rejects(bad.ensure("ffmpeg"), /checksum/)
+    assert.equal(bad.status().ffmpeg.ready, false)
+  } finally { spec.parts.forEach((p, i) => { p.sha256 = saved[i] }) }
 })
 
 test("ffmpeg is only downloaded when an app asks for it", async () => {
@@ -98,7 +142,7 @@ test("Macs get the build for their chip, and Linux on ARM uses the PC's own", ()
   assert.match(pick("darwin", "arm64", "node").url, /darwin-arm64/)
   assert.match(pick("darwin", "x64", "uv").url, /x86_64-apple-darwin/)
   for (const s of ["darwin-arm64", "darwin-x64"]) for (const n of ["python", "node", "uv"]) assert.match(runtimes.RUNTIMES[n][s].sha256, /^[0-9a-f]{64}$/)
-  assert.deepEqual(urls({ platform: "darwin", arch: "arm64" }), ["python", "node", "uv", false, false])
+  assert.deepEqual(urls({ platform: "darwin", arch: "arm64" }), ["python", "node", "uv", "git", false])
   // Linux on ARM: no x64 downloads, so apps use the system's python3 and node
   const arm = runtimes.create(h, { platform: "linux", arch: "arm64" })
   assert.deepEqual(urls({ platform: "linux", arch: "arm64" }), [false, false, false, false, false])

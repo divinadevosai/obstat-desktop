@@ -349,7 +349,9 @@ const views = {
     async function testIt() {
       const how = box.mode === "windows"
         ? "Obstat will open Windows Sandbox, a throwaway copy of Windows, and install and start the app in there. It can't see your files, and it's wiped when you delete the test."
-        : "Obstat will install and start the app in its own test folder, with its home, temp and cache folders pointed inside it. This keeps it from scattering files, but it is weaker than a real sandbox: the app still runs with your permissions."
+        : box.mode === "walls"
+          ? `Obstat will install and start the app in its own test folder, inside ${wallsName(box.walls)}. It can't see your files, Obstat's keys or other apps, and it can only change its own test folder, which is deleted with the test.`
+          : "Obstat will install and start the app in its own test folder, with its home, temp and cache folders pointed inside it. This keeps it from scattering files, but it is weaker than a real sandbox: the app still runs with your permissions."
       if (!confirm(`${how}\n\nContinue?`)) return
       busy(true)
       term.textContent = ""
@@ -544,12 +546,14 @@ const views = {
     const [box, tests] = await Promise.all([askKept("sandboxInfo"), ask("sandboxes")])
     const modeNote = box.mode === "windows"
       ? el("p", { class: "note ok-note", text: "This PC has Windows Sandbox, so tests run in a throwaway copy of Windows that can't see your files and is wiped when you delete the test. It has no NVIDIA GPU inside, so GPU apps test with their CPU version." })
+      : box.mode === "walls"
+        ? el("p", { class: "note ok-note", text: `Tests run inside ${wallsName(box.walls)}: the app can't see your files, Obstat's keys or other apps, and can only change its own test folder. It still has the internet, so it can download what it installs.` })
       : box.platform === "win32"
         ? el("p", { class: "card-err", text: "Windows Sandbox isn't turned on here, so tests run in a separate test folder instead. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing. On Windows Pro you can turn on Windows Sandbox in \"Turn Windows features on or off\". Windows Home doesn't have it." })
-        : el("p", { class: "card-err", text: "Tests on this computer run in a separate test folder. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing." })
+        : el("p", { class: "card-err", text: `Tests on this computer run in a separate test folder, because ${box.reason || "no sandbox is available"}. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing.${box.fix ? ` ${box.fix}` : ""}` })
     return page("Sandbox", "Try a repo nobody has reviewed without risking your files.",
       el("ol", { class: "steps-list" },
-        el("li", {}, el("b", { text: "Test it" }), el("span", { text: box.mode === "windows" ? "The app installs and runs in Windows Sandbox, which can't see your files." : "The app installs and runs in its own test folder." })),
+        el("li", {}, el("b", { text: "Test it" }), el("span", { text: box.mode === "windows" ? "The app installs and runs in Windows Sandbox, which can't see your files." : box.mode === "walls" ? `The app installs and runs in its own test folder, inside ${wallsName(box.walls)}, which can't see your files.` : "The app installs and runs in its own test folder." })),
         el("li", {}, el("b", { text: "Look around" }), el("span", { text: "Open it, try it, and read every command it ran in the log." })),
         el("li", {}, el("b", { text: "Bad? Delete it" }), el("span", { text: "One click deletes the test and everything it downloaded." })),
         el("li", {}, el("b", { text: "Good? Keep it" }), el("span", { text: "Obstat installs it fresh, at the exact commit you tested." }))),
@@ -560,7 +564,7 @@ const views = {
           const r = row({ ...t, reviewedAt: null })
           r.querySelector(".meta").replaceChildren(
             el("span", { class: "badge sandbox", text: STATUS[t.status] || t.status }),
-            el("span", { text: t.mode === "windows" ? "Windows Sandbox" : "Test folder" }))
+            el("span", { text: t.mode === "windows" ? "Windows Sandbox" : t.mode === "walls" ? "Sandboxed" : "Test folder" }))
           return r
         }))
         : emptyBox("No tests yet", "Add a repo and choose Test in sandbox.", linkBtn("Add a repo", "#/add")))
@@ -1307,6 +1311,8 @@ async function checkNews() {
 }
 
 const sep = () => (info.platform === "win32" ? "\\" : "/")
+// what the Mac and Linux sandboxes are called in the window
+const wallsName = (kind) => (kind === "seatbelt" ? "Apple's sandbox" : "a sandbox (bubblewrap)")
 
 const bytes = (n) => {
   const u = ["B", "KB", "MB", "GB", "TB"]
