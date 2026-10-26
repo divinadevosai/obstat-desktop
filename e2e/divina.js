@@ -51,8 +51,11 @@ const running = () => { try { return /Divina\.exe/i.test(execFileSync("tasklist"
   await new Promise((r) => setTimeout(r, 20000))
   if (!running()) fail("Divina.exe didn't keep running after Open")
   say("Divina is running")
-  execFileSync("taskkill", ["/IM", "Divina.exe", "/T", "/F"], { stdio: "ignore" })
+  // taskkill also reports an error when one of Divina's own processes had already
+  // ended, so what counts is whether Divina is still running afterwards
+  try { execFileSync("taskkill", ["/IM", "Divina.exe", "/T", "/F"], { stdio: "ignore" }) } catch {}
   await new Promise((r) => setTimeout(r, 3000))
+  if (running()) fail("Divina.exe kept running after it was ended")
 
   const after = await divina.remove()
   if (after.installed || fs.existsSync(divina.dir())) fail("Remove left Divina behind")

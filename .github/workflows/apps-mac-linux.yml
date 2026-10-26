@@ -1,0 +1,109 @@
+# The Mac and Linux counterpart of apps-windows.yml, on real machines:
+#   smoke    every bundled runtime downloads, passes its checksum and runs (git
+#            clones, uv installs), the OS sandbox works, and the chat and news load
+#   apps     reviewed apps install and start through Obstat's own code and open in
+#            Obstat's viewer; Build a UI makes a screen for a command-line app and
+#            uses it; and "sandbox:" apps are tested inside the OS sandbox
+#            (bubblewrap on Linux, Apple's sandbox on a Mac), as unreviewed repos are.
+# Logs and a screenshot are uploaded per app.
+name: Apps on Mac and Linux
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "Only these (as in the matrix below, space-separated). Empty: all."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-mac-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Electron here comes from npm, without the AppArmor profile the .deb installs, so
+      # Ubuntu's limit on user namespaces is lifted on this test machine (build.yml checks
+      # the .deb's own profile on a stock Ubuntu)
+      - if: runner.os == 'Linux'
+        run: sudo apt-get install -y bubblewrap && sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: npm ci
+      - run: node e2e/smoke.js
+
+  app:
+    name: ${{ matrix.app }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        app:
+          - divinadevosai/plazai
+          - SillyTavern/SillyTavern
+          - pinokiofactory/kokoro-tts
+          - buildui:lincolnloop/python-qrcode
+          - sandbox:divinadevosai/plazai
+          - sandbox:pinokiofactory/kokoro-tts
+    steps:
+      - name: Skip unless asked for
+        id: want
+        shell: bash
+        env:
+          ONLY: ${{ inputs.apps }}
+          APP: ${{ matrix.app }}
+        run: |
+          if [ -z "$ONLY" ] || printf '%s\n' $ONLY | grep -qixF "$APP"; then echo "run=1" >> "$GITHUB_OUTPUT"; fi
+      # the token isn't left in .git/config, so the apps' install scripts can't use it
+      - if: steps.want.outputs.run
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - if: steps.want.outputs.run
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.want.outputs.run && runner.os == 'Linux'
+        run: sudo apt-get install -y bubblewrap xvfb && sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - if: steps.want.outputs.run
+        run: npm ci
+      - name: Install, start and open the app in Obstat (Mac)
+        if: steps.want.outputs.run && runner.os == 'macOS'
+        env:
+          APP: ${{ matrix.app }}
+        run: npx electron e2e/run.js "$APP"
+      # Chromium's own sandbox needs a setuid helper that npm's copy of Electron doesn't
+      # have, so the test window runs without it here; the installed .deb sets it up
+      - name: Install, start and open the app in Obstat (Linux)
+        if: steps.want.outputs.run && runner.os == 'Linux'
+        env:
+          APP: ${{ matrix.app }}
+        run: xvfb-run -a -s "-screen 0 1440x960x24" npx electron --no-sandbox e2e/run.js "$APP"
+      - name: Keep the logs and screenshot
+        if: always() && steps.want.outputs.run
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ runner.os }}-${{ strategy.job-index }}
+          path: e2e-out/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -26,7 +26,7 @@ const entry = (url) => ({ id: "someone/demo", owner: "someone", name: "demo", ur
 test("folder mode installs and starts the app with its home inside the test folder", { skip: !hasPython || process.platform === "win32", timeout: 60000 }, async () => {
   const h = freshHome()
   const events = []
-  const sb = sandboxLib.create(h, runtimes, { emit: (e) => events.push(e), platform: "linux", sandboxExe: null })
+  const sb = sandboxLib.create(h, runtimes, { emit: (e) => events.push(e), platform: "linux", sandboxExe: null, detectWalls: async () => ({ kind: null, reason: "test" }) })
   const repo = makeRepo({
     "install.js": `module.exports = { run: [{ method: "shell.run", params: { message: ["echo $HOME > home.txt", "echo $XDG_CACHE_HOME > cache.txt"] } }] }`,
     "start.js": `module.exports = { daemon: true, run: [
@@ -55,6 +55,80 @@ test("folder mode installs and starts the app with its home inside the test fold
   assert.equal(sb.list().length, 0)
   assert.ok(!fs.existsSync(dir))
   assert.ok(!fs.existsSync(fakeHome))
+})
+
+// The real thing on Mac and Linux: an app whose install tries to take your files and
+// Obstat's keys, run through Obstat's own sandbox code, inside bubblewrap or Apple's sandbox.
+test("on Mac and Linux a test runs inside the OS sandbox: it can't read your files or Obstat's keys, and still runs", { skip: !hasPython || process.platform === "win32", timeout: 90000 }, async (t) => {
+  const walls = await require("../lib/confine").detect()
+  if (!walls.kind) return t.skip(`no sandbox here: ${walls.reason}`)
+  // Obstat's folder inside the real home folder, as it is for real
+  const h = home.create(fs.mkdtempSync(path.join(os.homedir(), ".obstat-sbtest-"))); h.ensure()
+  const secret = path.join(os.homedir(), `.obstat-secret-${path.basename(h.root)}`)
+  fs.writeFileSync(secret, "private")
+  fs.writeFileSync(path.join(h.root, "keys.json"), '[{"name":"OPENAI_API_KEY"}]')
+  fs.writeFileSync(path.join(h.root, "control.json"), '{"token":"t"}')
+  const escaped = path.join(os.homedir(), `.obstat-escaped-${path.basename(h.root)}`)
+  // another app's server on this computer (ComfyUI, say), which a test mustn't reach
+  const victim = require("node:http").createServer((q, r) => r.end("secret page")).listen(0, "127.0.0.1")
+  await new Promise((r) => victim.once("listening", r))
+  const reach = `"${process.execPath}" -e "fetch('http://127.0.0.1:${victim.address().port}/').then((r) => r.text()).then((t) => console.log(t), () => console.log('blocked'))" > victim.txt`
+  let sb
+  // an app checking its own server (as Gradio does), which a test must still be able to
+  const self = `"${process.execPath}" -e "const s = require('http').createServer((q, r) => r.end('ok')).listen(Number(process.env.PORT), '127.0.0.1', () => fetch('http://127.0.0.1:' + process.env.PORT + '/').then((r) => r.text()).then((t) => console.log(t), (e) => console.log('blocked ' + e.cause?.code)).finally(() => s.close()))" > self.txt`
+  try {
+    const events = []
+    sb = sandboxLib.create(h, runtimes, { emit: (e) => events.push(e), platform: process.platform, sandboxExe: null })
+    const log = () => events.filter((e) => e.type === "log").map((e) => e.text).join("")
+    const steal = (f, out) => `(cat '${f}' > ${out} 2>/dev/null && echo yes || echo no) > ${out}.result`
+    const repo = makeRepo({
+      "install.js": `module.exports = { run: [{ method: "shell.run", params: { message: [
+        ${JSON.stringify(steal(secret, "secret.txt"))},
+        ${JSON.stringify(steal(path.join(h.root, "keys.json"), "keys.txt"))},
+        ${JSON.stringify(steal(path.join(h.root, "control.json"), "control.txt"))},
+        ${JSON.stringify(`(echo x > '${escaped}' 2>/dev/null && echo yes || echo no) > escape.result`)},
+        "echo $OBSTAT_SANDBOX > mode.txt",
+        ${JSON.stringify(reach)},
+        ${JSON.stringify(self)},
+        "echo $GRADIO_SERVER_PORT-$PORT > gradio.txt",
+      ] } }] }`,
+      "start.js": `module.exports = { daemon: true, run: [
+        { method: "shell.run", params: { message: [${JSON.stringify(`"${process.execPath}" -e "require('http').createServer((q, r) => r.end('ok')).listen(Number(process.env.PORT), '127.0.0.1', () => console.log('at http://127.0.0.1:' + process.env.PORT))"`)}], on: [{ event: "/(http:\\/\\/[0-9.:]+)/", done: true }] } },
+        { method: "local.set", params: { url: "{{input.event[1]}}" } },
+      ] }`,
+    })
+    assert.equal((await sb.info()).mode, "walls")
+    // a test that never finishes says what it got to, rather than only timing out
+    let timer
+    const r = await Promise.race([sb.test(entry(repo)), new Promise((res) => { timer = setTimeout(() => res({ timedOut: true }), 70000) })]).finally(() => clearTimeout(timer))
+    assert.equal(r.running, true, `${JSON.stringify(r)}\n${log()}`)
+    const dir = sb.appDir("someone/demo")
+    const said = (f) => fs.readFileSync(path.join(dir, f), "utf8").trim()
+    assert.equal(said("secret.txt.result"), "no", "read a file in your home folder")
+    assert.equal(said("keys.txt.result"), "no", "read Obstat's keys")
+    assert.equal(said("control.txt.result"), "no", "read the agents' control token")
+    assert.equal(said("escape.result"), "no", "wrote outside its folder")
+    assert.equal(fs.existsSync(escaped), false)
+    assert.equal(said("mode.txt"), "walls")
+    assert.equal(said("victim.txt"), "blocked", "reached another app's server on this computer")
+    assert.equal(said("self.txt"), "ok", "couldn't reach its own server")
+    assert.match(said("gradio.txt"), /^(\d+)-\1$/, "Gradio isn't told the app's own port")
+    // and it still works: its page answers from outside the sandbox
+    const page = sb.get("someone/demo")
+    assert.equal(page.mode, "walls")
+    assert.equal((await fetch(page.running.url)).status, 200)
+    await sb.remove("someone/demo")
+    await new Promise((res) => setTimeout(res, 1500))
+    // Stop ended everything inside: nothing answers any more
+    await assert.rejects(fetch(page.running.url))
+  } finally {
+    // a failed run mustn't leave the test's processes keeping this file going
+    await sb?.stopAll()
+    victim.close()
+    fs.rmSync(secret, { force: true })
+    fs.rmSync(escaped, { force: true })
+    fs.rmSync(h.root, { recursive: true, force: true })
+  }
 })
 
 test("Windows Sandbox mode maps the app read-only and only lets log text out", { skip: process.platform === "win32", timeout: 30000 }, async () => {
@@ -96,4 +170,25 @@ test("Windows Sandbox mode maps the app read-only and only lets log text out", {
   await sb.remove("someone/demo")
   assert.ok(!fs.existsSync(run))
   assert.equal(sb.list().length, 0)
+})
+
+test("on Mac and Linux a test doesn't get Obstat's own environment (exported keys stay out)", { skip: process.platform === "win32", timeout: 60000 }, async (t) => {
+  const walls = await require("../lib/confine").detect()
+  if (!walls.kind) return t.skip(`no sandbox here: ${walls.reason}`)
+  const h = home.create(fs.mkdtempSync(path.join(os.homedir(), ".obstat-sbenv-"))); h.ensure()
+  process.env.OBSTAT_TEST_SECRET_KEY = "sk-should-not-leak"
+  try {
+    const sb = sandboxLib.create(h, runtimes, { platform: process.platform, sandboxExe: null })
+    const repo = makeRepo({ "install.js": `module.exports = { run: [{ method: "shell.run", params: { message: ["env > env.txt"] } }] }` })
+    const r = await sb.test(entry(repo))
+    assert.equal(r.ok, true, JSON.stringify(r))
+    const seen = fs.readFileSync(path.join(sb.appDir("someone/demo"), "env.txt"), "utf8")
+    assert.doesNotMatch(seen, /sk-should-not-leak/)
+    assert.match(seen, /^HOME=.*someone-demo\.home$/m)
+    assert.match(seen, /^OBSTAT_SANDBOX=walls$/m)
+    await sb.remove("someone/demo")
+  } finally {
+    delete process.env.OBSTAT_TEST_SECRET_KEY
+    fs.rmSync(h.root, { recursive: true, force: true })
+  }
 })
