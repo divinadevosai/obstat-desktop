@@ -78,7 +78,7 @@ process.stdout.write(JSON.stringify({
   writeOutside: can(() => fs.writeFileSync(outside, "x")),
   writeInside: can(() => fs.writeFileSync(path.join(inside, "ok.txt"), "x")),
   readRuntime: can(() => fs.readFileSync(runtime)),
-  signalOther: can(() => process.kill(Number(otherPid), 0)),
+  signalOther: can(() => process.kill(Number(otherPid), "SIGTERM")),
   signalOwn: (() => { const c = require("node:child_process").spawn("sleep", ["30"], { stdio: "ignore" }); const ok = can(() => process.kill(c.pid, "SIGTERM")); return ok })(),
   procs,
 }))
@@ -110,6 +110,8 @@ test("a hostile app in the real sandbox can't read your files or Obstat's keys, 
     assert.equal(out.writeInside, true, "couldn't write its own folder")
     assert.equal(fs.readFileSync(path.join(inside, "ok.txt"), "utf8"), "x", "its own folder is the real one")
     assert.equal(out.readRuntime, true, "couldn't read Obstat's runtimes")
+    await new Promise((r) => setTimeout(r, 300))
+    assert.ok(other.exitCode === null && other.signalCode === null, `ended a program outside the sandbox (${other.signalCode})`)
     assert.equal(out.signalOther, false, "could signal a program outside the sandbox")
     assert.equal(out.signalOwn, true, "couldn't end a program it started itself")
     if (walls.kind === "bwrap") assert.ok(out.procs > 0 && out.procs < 5, `sees ${out.procs} processes`)
