@@ -197,6 +197,13 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("chat-send", (channel, text) => withAccount((t) => api.sendChat(channel, text, t, net.fetch)))
   handle("chat-report", (channel, id) => withAccount((t) => api.reportChat(channel, id, t, net.fetch)))
   handle("chat-mod", (action, channel, id) => withAccount((t) => api.modChat(action, channel, id, t, net.fetch)))
+  // the Hub reads with the session when there is one, for your votes
+  handle("hub-list", (query) => api.hubList(query, account.token(), net.fetch))
+  handle("hub-post", (id) => api.hubPost(id, account.token(), net.fetch))
+  handle("hub-create", (fields) => withAccount((t) => api.hubCreate(fields, t, net.fetch)))
+  handle("hub-vote", (id, value) => withAccount((t) => api.hubVote(id, value, t, net.fetch)))
+  handle("hub-comment", (id, text, parent) => withAccount((t) => api.hubComment(id, text, parent, t, net.fetch)))
+  handle("hub-act", (action, id, cid) => withAccount((t) => api.hubAct(action, id, cid, t, net.fetch)))
   // the badge comes from the server each time, so taking it away works at once
   handle("account", async () => {
     if (!account.token()) return { name: null }
