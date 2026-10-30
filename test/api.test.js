@@ -35,3 +35,21 @@ test("check posts the trimmed url and rejects junk before any request", async ()
   await assert.rejects(api.check("", fetchImpl), /Paste a GitHub repo/)
   await assert.rejects(api.check("x".repeat(301), fetchImpl), /Paste a GitHub repo/)
 })
+
+test("the Hub only sends known query values and ids, and the session only to Obstat", async () => {
+  const seen = []
+  const fetchImpl = async (url, o = {}) => { seen.push({ url, ...o }); return { ok: true, status: 200, json: async () => ({ posts: [{ id: "x" }], post: { id: "p" }, comment: { id: "c" } }) } }
+  const r = await api.hubList({ kind: "launch", sort: "top", period: "week", tag: "a&b=c", before: "../x" }, "tok", fetchImpl)
+  assert.equal(r.posts.length, 1)
+  assert.equal(seen[0].url, `${api.BASE}/api/hub?kind=launch&sort=top&period=week`)
+  assert.equal(seen[0].headers.authorization, "Bearer tok")
+  await assert.rejects(api.hubPost("../../account", null, fetchImpl), /gone/)
+  await assert.rejects(api.hubVote("lzx1abcd-0011aabb", 2, "tok", fetchImpl), /Vote/)
+  await assert.rejects(api.hubCreate({ title: "hi", tag: "general" }, null, fetchImpl), /Sign in/)
+  await api.hubCreate({ kind: "discussion", tag: "general", title: " hi " }, "tok", fetchImpl)
+  assert.deepEqual(JSON.parse(seen.at(-1).body), { kind: "discussion", tag: "general", title: "hi", body: "" })
+  await api.hubAct("delete", "lzx1abcd-0011aabb", "lzx1abce-0011aabc", "tok", fetchImpl)
+  assert.equal(seen.at(-1).method, "DELETE")
+  assert.equal(seen.at(-1).url, `${api.BASE}/api/hub/lzx1abcd-0011aabb/comments/lzx1abce-0011aabc`)
+  await assert.rejects(api.hubAct("nuke", "lzx1abcd-0011aabb", null, "tok", fetchImpl), /Unknown/)
+})

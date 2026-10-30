@@ -17,6 +17,7 @@ const updatesLib = require("./lib/updates")
 const buildUi = require("./lib/buildui")
 const cppToolsLib = require("./lib/cpptools")
 const divinaLib = require("./lib/divina")
+const usageLib = require("./lib/usage")
 const deeplink = require("./lib/deeplink")
 const platformLib = require("./lib/platform")
 const { MacUpdater } = require("./lib/macupdate")
@@ -29,7 +30,9 @@ const home = create()
 const runtimes = runtimesLib.create(home, { fetchImpl: (url) => net.fetch(url), log: (l) => home.log(l) })
 const toWindow = (e) => { if (win && !win.isDestroyed()) win.webContents.send("obstat:event", e) }
 const lastOpen = new Map() // app id -> the address its start script asked to open
+const usage = usageLib.create(home)
 const apps = appsLib.create(home, runtimes, {
+  onRun: (r) => usage.record(r),
   emit: (e) => {
     if (e.type === "open" && api.isLocalUrl(e.url)) lastOpen.set(e.id, e.url)
     // the app stopped: close its page inside Obstat
@@ -55,6 +58,7 @@ const account = accountLib.create(home, crypt)
 const icons = iconsLib.create(home.dir("cache"), (url, opts) => net.fetch(url, opts))
 
 const sandbox = sandboxLib.create(home, runtimes, {
+  onRun: (r) => usage.record(r),
   emit: (e) => { if (win && !win.isDestroyed()) win.webContents.send("obstat:event", e) },
   workerEnv: { ELECTRON_RUN_AS_NODE: "1" },
 })
@@ -193,6 +197,13 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("chat-send", (channel, text) => withAccount((t) => api.sendChat(channel, text, t, net.fetch)))
   handle("chat-report", (channel, id) => withAccount((t) => api.reportChat(channel, id, t, net.fetch)))
   handle("chat-mod", (action, channel, id) => withAccount((t) => api.modChat(action, channel, id, t, net.fetch)))
+  // the Hub reads with the session when there is one, for your votes
+  handle("hub-list", (query) => api.hubList(query, account.token(), net.fetch))
+  handle("hub-post", (id) => api.hubPost(id, account.token(), net.fetch))
+  handle("hub-create", (fields) => withAccount((t) => api.hubCreate(fields, t, net.fetch)))
+  handle("hub-vote", (id, value) => withAccount((t) => api.hubVote(id, value, t, net.fetch)))
+  handle("hub-comment", (id, text, parent) => withAccount((t) => api.hubComment(id, text, parent, t, net.fetch)))
+  handle("hub-act", (action, id, cid) => withAccount((t) => api.hubAct(action, id, cid, t, net.fetch)))
   // the badge comes from the server each time, so taking it away works at once
   handle("account", async () => {
     if (!account.token()) return { name: null }
@@ -242,6 +253,22 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("add-key", (k) => { const r = keys.add(k || {}); home.log(`key ${r.name} saved`); return r })
   handle("remove-key", (id) => keys.remove(String(id)))
   handle("disk", () => home.disk())
+  // Insights: worked out from what's on this computer, never sent anywhere (lib/usage.js)
+  handle("insights", async (days) => {
+    const list = apps.list()
+    const live = list.filter((a) => a.running?.script === "start.js").map((a) => ({ id: a.id, since: a.running.since }))
+    const [disk, box] = await Promise.all([home.disk(), sandbox.info()])
+    const names = Object.fromEntries(list.map((a) => [a.id, a.name]))
+    return {
+      usage: usage.summary({ days: [1, 7, 30, 90].includes(days) ? days : 30, live }),
+      names,
+      installed: list.filter((a) => a.installed).length,
+      running: list.filter((a) => a.running).map((a) => a.name),
+      disk: { apps: disk.used.apps, free: disk.free },
+      runtimes: runtimes.status(),
+      sandbox: { mode: box.mode, walls: box.walls, windows: box.windowsSandbox },
+    }
+  })
   // looking for each tool starts a process, so the answer is kept for a minute
   let toolsSeen = null
   handle("tools", () => {
@@ -317,7 +344,10 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("app-icon", (id, url) => {
     const mine = typeof id === "string" && apps.get(id)
     const name = mine?.name || (typeof id === "string" ? id.split("/").pop() : null)
-    return icons.get(mine?.installed || mine?.local ? apps.appDir(id) : null, typeof url === "string" ? url : mine?.icon || null, name)
+    // An app from the reviewed list shows the logo the list gives (checked by the team);
+    // the logo in its folder is often a launcher's placeholder. Apps you made use their folder's.
+    const folder = (mine?.installed || mine?.local) && !mine?.reviewed ? apps.appDir(id) : null
+    return icons.get(folder, typeof url === "string" ? url : mine?.icon || null, name)
   })
   handle("runtimes", () => runtimes.status())
   // Microsoft's C++ tools, for apps whose packages build from source (see lib/cpptools.js)

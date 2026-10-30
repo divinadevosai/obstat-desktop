@@ -43,6 +43,36 @@ const forget = (what) => kept.delete(what)
 const go = (hash) => { location.hash = hash }
 const appHash = (e) => `#/app/${encodeURIComponent(e.owner)}/${encodeURIComponent(e.name)}`
 const runHash = (id) => `#/run/${encodeURIComponent(id)}`
+
+// ---------- appearance: day or night, glass or solid panels (app/glass.css) ----------
+
+const THEMES = { system: "Match computer", light: "Day", dark: "Night" }
+function themePref() { try { const t = localStorage.getItem("obstat-theme"); return Object.hasOwn(THEMES, t) ? t : "system" } catch { return "system" } }
+function applyTheme(t = themePref()) {
+  if (t === "system") delete document.documentElement.dataset.theme
+  else document.documentElement.dataset.theme = t
+}
+// The glass blur is drawn by the graphics card. Without one (Chromium drawing in
+// software, as on many virtual machines and some Linux PCs) the panels go solid instead.
+function softwareGraphics() {
+  try {
+    const gl = document.createElement("canvas").getContext("webgl")
+    if (!gl) return true
+    const info = gl.getExtension("WEBGL_debug_renderer_info")
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER)))
+  } catch { return true }
+}
+function themeChoice() {
+  const box = el("div", { class: "seg", role: "group", "aria-label": "Appearance" })
+  const draw = () => box.replaceChildren(...Object.entries(THEMES).map(([t, label]) => el("button", { type: "button", text: label, "aria-pressed": String(themePref() === t), onclick: () => {
+    try { localStorage.setItem("obstat-theme", t) } catch {}
+    applyTheme(t); draw()
+  } })))
+  draw()
+  return box
+}
+applyTheme()
+document.documentElement.classList.toggle("lowfx", softwareGraphics())
 const stars = (n) => `★ ${(n || 0).toLocaleString("en-GB")}`
 const day = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
 // "3 days ago", "2 months ago"
@@ -86,8 +116,11 @@ const icons = new Map()
 function mark(name, app) {
   const m = el("div", { class: "mark", "aria-hidden": "true", text: name.slice(0, 1).toUpperCase() })
   if (app?.id) {
-    const key = `${app.id}|${app.icon || ""}|${!!app.installed}`
-    if (!icons.has(key)) icons.set(key, ask("appIcon", app.id, app.icon || null).catch(() => null))
+    // the list's logo wins over the one saved at install, so a corrected logo shows everywhere
+    const listed = repos?.find((r) => r.id === app.id)
+    const url = (listed ? listed.icon : app.icon) || null
+    const key = `${app.id}|${url || ""}|${!!app.installed}`
+    if (!icons.has(key)) icons.set(key, ask("appIcon", app.id, url).catch(() => null))
     icons.get(key).then((src) => { if (src) { m.textContent = ""; m.classList.add("has-img"); m.append(el("img", { src, alt: "" })) } })
   }
   return m
@@ -102,7 +135,7 @@ const ICONS = {
   edit: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4", back: "M10 6l-6 6 6 6M4 12h16", prev: "M15 5l-7 7 7 7", next: "M9 5l7 7-7 7", copy: "M8 8h11v11H8zM5 16V5h11", trash: "M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12",
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1", shield: "M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z",
   compass: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM15.5 8.5l-2 5-5 2 2-5z", sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z",
-  chat: "M4 5h16v11H9l-5 4z", news: "M4 10v4h3l7 4V6L7 10zM17 9a4 4 0 0 1 0 6", disk: "M4 6h16v12H4zM4 14h16M8 17h.01", logs: "M6 4h9l3 3v13H6zM9 10h6M9 14h6M9 18h4",
+  insights: "M4 20V10M10 20V4M16 20v-7M22 20H2", up: "M6 14l6-6 6 6", down: "M6 10l6 6 6-6", plus: "M12 5v14M5 12h14", chat: "M4 5h16v11H9l-5 4z", news: "M4 10v4h3l7 4V6L7 10zM17 9a4 4 0 0 1 0 6", disk: "M4 6h16v12H4zM4 14h16M8 17h.01", logs: "M6 4h9l3 3v13H6zM9 10h6M9 14h6M9 18h4",
   plug: "M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5", server: "M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01", power: "M12 3v8M7 6a7 7 0 1 0 10 0",
   doc: "M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10.5a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5zM14 3.5V8h4M9 12h6M9 15.5h6",
   lock: "M6.5 11h11v9h-11zM8.5 11V8a3.5 3.5 0 0 1 7 0v3",
@@ -702,12 +735,18 @@ const views = {
         : [emptyBox("No apps installed", "Once an app is installed, you can set it to start with Obstat here.")])))
   },
 
+  insights: () => insightsView(),
+  hub: (tag) => hubView(tag),
+  post: (id) => postView(id),
+  launches: (period) => launchesView(period),
+
   settings: async () => page("Settings", "Storage, startup and troubleshooting.",
     el("h2", { class: "group-h", text: "General" }),
     el("dl", { class: "rows" },
       el("div", {}, el("dt", {}, "Version", el("small", { text: "Obstat updates itself. New versions download in the background." })), el("dd", {}, info.version, " ", updateLine())),
       el("div", {}, el("dt", { text: "Home folder" }), el("dd", {}, info.home, " ", el("button", { class: "link", text: "View folder", onclick: () => ask("openFolder", "home") }))),
-      el("div", {}, el("dt", { text: "App list" }), el("dd", { text: "obstat.app" }))),
+      el("div", {}, el("dt", { text: "App list" }), el("dd", { text: "obstat.app" })),
+      el("div", {}, el("dt", {}, "Appearance", el("small", { text: "Day, night, or whatever your computer is set to." })), el("dd", {}, themeChoice()))),
     el("h2", { class: "group-h", text: "Troubleshoot" }),
     el("dl", { class: "rows" },
       el("div", {}, el("dt", {}, "Downloads cache", el("small", { text: "Files Obstat downloaded while installing. Safe to empty." })),
@@ -829,6 +868,274 @@ const views = {
           n.url && el("a", { href: n.url, text: n.url }))
       })) : emptyBox("No news yet", "Updates and new apps show up here."))
   },
+}
+
+// ---------- community hub: discussions and launches ----------
+
+const HUB_TAGS = { showcase: "Showcase", help: "Help", ideas: "Ideas", general: "General" }
+const TAG_CLASS = { showcase: "tag-green", help: "tag-blue", ideas: "tag-violet", general: "tag-grey" }
+const LAUNCH_STATUS = { tested: ["Reviewed and tested", "tag-green"], reviewed: ["Reviewed", "tag-blue"], review: ["In safety review", "tag-amber"] }
+const SORTS = { hot: "Hot", new: "New", top: "Top" }
+const PERIOD_NAMES = { day: "Today", week: "This week", month: "This month", all: "All time" }
+let hubSort = "hot", launchSort = "top"
+
+// a letter on a colour picked from the name, in place of profile pictures
+function avatar(name) {
+  let h = 0
+  for (const c of String(name)) h = (h * 31 + c.codePointAt(0)) >>> 0
+  return el("span", { class: `avatar av${h % 6}`, text: (String(name).trim()[0] || "?").toUpperCase(), "aria-hidden": "true" })
+}
+const byline = (p) => el("div", { class: "by" }, avatar(p.name), el("b", { text: p.name }), badge(p), el("span", { text: `· ${ago(p.at)}` }))
+const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`
+
+// Up and down arrows with the score between; launches only go up.
+// A vote shows at once and goes back if the server says no.
+function voter(p, { down = true } = {}) {
+  const box = el("div", { class: "vote" })
+  const score = el("b", { text: String(p.score) })
+  const btn = (dir, value) => el("button", { class: `vote-${dir}`, "aria-label": dir === "up" ? "Upvote" : "Downvote", onclick: async (e) => {
+    e.preventDefault(); e.stopPropagation()
+    const before = { mine: p.mine || 0, score: p.score }
+    const next = before.mine === value ? 0 : value
+    p.score += next - before.mine; p.mine = next; draw()
+    try { const r = await ask("hubVote", p.id, next); p.score = r.score; p.mine = r.mine; draw() } catch (x) {
+      Object.assign(p, before); draw()
+      if (/Sign in/.test(x.message)) go(down ? "#/hub/signin" : "#/launches/signin")
+      else box.title = x.message
+    }
+  } }, icon(dir))
+  const up = btn("up", 1), dn = down ? btn("down", -1) : null
+  const draw = () => {
+    score.textContent = String(p.score)
+    box.classList.toggle("is-up", p.mine === 1); box.classList.toggle("is-down", p.mine === -1)
+    up.setAttribute("aria-pressed", String(p.mine === 1)); dn?.setAttribute("aria-pressed", String(p.mine === -1))
+  }
+  box.append(up, score, ...(dn ? [dn] : []))
+  draw()
+  return box
+}
+
+const segLinks = (items, active, href) => el("div", { class: "seg", role: "tablist" },
+  ...Object.entries(items).map(([k, label]) => el("a", { href: href(k), role: "tab", "aria-selected": String(k === active), text: label })))
+
+// What a signed-out visitor sees in place of a form
+function needAccount(what, done) {
+  const box = el("div", { class: "form-card" }, el("h2", { text: `Sign in to ${what}` }),
+    el("p", { class: "muted", text: "One account works for posts, launches and the live chat. Obstat only keeps a scrambled copy of your email." }))
+  box.append(signInBox((a) => { forget("account"); done(a) }))
+  return box
+}
+
+// The form for a new discussion or launch, opened from the page's button
+function composer(kind, onDone) {
+  const card = el("div", { class: "form-card composer-card" })
+  const msg = el("p", { class: "chat-status" })
+  const field = (label, input, hint) => el("label", { class: "field" }, el("span", { text: label }), input, hint && el("small", { text: hint }))
+  const title = el("input", { maxlength: "120", placeholder: kind === "launch" ? "App name" : "A clear title" })
+  const body = el("textarea", { rows: "5", maxlength: "4000", placeholder: kind === "launch" ? "What it does, who it's for, what's next (optional)" : "Say more (optional)" })
+  let tag = "general", repo, tagline
+  const parts = [el("h2", { text: kind === "launch" ? "Launch your app" : "New post" })]
+  if (kind === "launch") {
+    repo = el("input", { maxlength: "300", placeholder: "github.com/you/your-app" })
+    tagline = el("input", { maxlength: "140", placeholder: "One line on what it does" })
+    parts.push(el("p", { class: "muted", text: "Add the repo to Obstat first (paste it in the search box at the top) so it goes into safety review. People can upvote your launch straight away; Install only appears once Obstat has reviewed it." }),
+      field("GitHub repo", repo), field("Name", title), field("Tagline", tagline), field("About it", body))
+  } else {
+    const tags = el("div", { class: "seg" })
+    const drawTags = () => tags.replaceChildren(...Object.entries(HUB_TAGS).map(([k, label]) =>
+      el("button", { type: "button", "aria-pressed": String(k === tag), text: label, onclick: () => { tag = k; drawTags() } })))
+    drawTags()
+    parts.push(field("Title", title), field("Tag", tags), field("Post", body, "Plain text. Links show as text, so people can see where they go."))
+  }
+  const send = el("button", { class: "btn", text: kind === "launch" ? "Launch" : "Post", onclick: async () => {
+    send.disabled = true; msg.textContent = ""
+    try {
+      const p = await ask("hubCreate", kind === "launch"
+        ? { kind, repo: repo.value, title: title.value, tagline: tagline.value, body: body.value }
+        : { kind, tag, title: title.value, body: body.value })
+      onDone(p)
+    } catch (x) { msg.textContent = x.message; send.disabled = false }
+  } })
+  card.append(...parts, el("div", { class: "actions" }, send, el("button", { class: "btn ghost", text: "Cancel", onclick: () => onDone(null) })), msg)
+  return card
+}
+
+// A page with the post list on the left and boxes on the right
+const hubGrid = (main, ...side) => el("div", { class: "hub-grid" }, el("div", { class: "hub-main" }, ...main), el("aside", { class: "hub-side" }, ...side.filter(Boolean)))
+const sideBox = (title, ...kids) => el("section", { class: "box hub-box" }, el("div", { class: "box-h" }, el("h2", { text: title })), ...kids)
+
+function postCard(p) {
+  return el("a", { class: "post", href: `#/post/${p.id}` }, voter(p),
+    el("div", { class: "post-in" }, byline(p),
+      el("h3", { text: p.title }),
+      p.excerpt && el("p", { text: p.excerpt.length >= 200 ? `${p.excerpt}…` : p.excerpt }),
+      el("div", { class: "post-foot" }, el("span", { class: `tag ${TAG_CLASS[p.tag] || ""}`, text: HUB_TAGS[p.tag] || p.tag }),
+        el("span", {}, icon("chat"), plural(p.comments, "comment")))))
+}
+
+async function hubView(tag) {
+  if (tag === "signin") tag = undefined
+  if (tag && !Object.hasOwn(HUB_TAGS, tag)) tag = undefined
+  const [channels, acct] = await Promise.all([askKept("channels").catch(() => ({})), askKept("account").catch(() => ({ name: null }))])
+  let data, failed
+  try { data = await ask("hubList", { kind: "discussion", sort: hubSort, ...(tag ? { tag } : {}) }) } catch (x) { failed = x.message }
+  const list = el("div", { class: "posts" })
+  const draw = () => list.replaceChildren(...(failed ? [emptyBox("Couldn't load the Hub", failed)]
+    : data.posts.length ? data.posts.map(postCard)
+    : [emptyBox(tag ? `Nothing in ${HUB_TAGS[tag]} yet` : "No posts yet", "Start the first one: show what you made, ask for help or suggest an idea.")]))
+  draw()
+  const slot = el("div")
+  const openForm = (a) => slot.replaceChildren(a.name ? composer("discussion", (p) => {
+    slot.replaceChildren()
+    if (p) { data.posts.unshift(p); draw() }
+  }) : needAccount("post", openForm))
+  if (location.hash === "#/hub/signin" && !acct.name) slot.replaceChildren(needAccount("vote, post and comment", () => go("#/hub")))
+  const sortBar = el("div", { class: "seg sort" }, ...Object.entries(SORTS).map(([k, label]) =>
+    el("button", { "aria-pressed": String(k === hubSort), text: label, onclick: () => { hubSort = k; render() } })))
+  const filters = el("div", { class: "hub-filters" },
+    segLinks({ all: "All", ...HUB_TAGS }, tag || "all", (k) => (k === "all" ? "#/hub" : `#/hub/${k}`)), sortBar)
+  const top = failed ? [] : [...data.posts].sort((a, b) => b.score - a.score).slice(0, 4)
+  return [
+    el("div", { class: "page-h" }, el("div", {}, el("h1", { text: "Community" }), el("p", { class: "sub", text: "Share what you've made, ask questions and suggest ideas. Posts that three people report are hidden." })),
+      el("button", { class: "btn", onclick: async () => openForm(await askKept("account")) }, icon("plus"), "New post")),
+    communityTabs(channels, "hub"), filters, slot,
+    hubGrid([list],
+      top.length > 1 && sideBox("Most upvoted here", ...top.map((p) => el("a", { class: "hub-top", href: `#/post/${p.id}` }, el("b", { text: p.title }), el("span", { text: `${plural(p.score, "vote")} · ${plural(p.comments, "comment")}` })))),
+      sideBox("Tags", ...Object.entries(HUB_TAGS).map(([k, label]) => el("a", { class: "hub-top", href: `#/hub/${k}` }, el("span", { class: `tag ${TAG_CLASS[k]}`, text: label }),
+        el("span", { text: { showcase: "Things you made", help: "Questions", ideas: "For Obstat", general: "Everything else" }[k] })))),
+      sideBox("Be kind", el("p", { class: "muted", text: "Talk about the work, not the person. No spam, no selling, no links to things that aren't safe. Moderators can remove posts and ban accounts." })))]
+}
+
+async function postView(id) {
+  const [channels, acct] = await Promise.all([askKept("channels").catch(() => ({})), askKept("account").catch(() => ({ name: null }))])
+  const p = await ask("hubPost", id)
+  const isLaunch = p.kind === "launch"
+  const mod = !!acct.badge && !p.yours
+  const status = el("p", { class: "chat-status" })
+  const act = (label, action, cid, confirmText, after) => el("button", { class: `link small${action === "report" ? "" : " danger"}`, text: label, onclick: async (e) => {
+    if (confirmText && !confirm(confirmText)) return
+    try { await ask("hubAct", action, p.id, cid); after(e) } catch (x) { status.textContent = x.message }
+  } })
+  const postTools = [
+    p.yours && act("Delete", "delete", null, "Delete your post and its comments?", () => go(isLaunch ? "#/launches" : "#/hub")),
+    !p.yours && acct.name && !mod && act("Report", "report", null, null, (e) => { e.target.textContent = "Reported"; e.target.disabled = true }),
+    mod && act("Delete", "delete", null, "Delete this post for everyone?", () => go(isLaunch ? "#/launches" : "#/hub")),
+    mod && !p.badge && act("Ban", "ban", null, `Ban ${p.name}? Everything they posted is removed and they can't come back with the same email.`, () => go(isLaunch ? "#/launches" : "#/hub")),
+  ]
+  const app = isLaunch ? (repos || []).find((e) => e.id === p.repo) : null
+  const head = el("article", { class: "post post-full" }, voter(p, { down: !isLaunch }),
+    el("div", { class: "post-in" }, byline(p), el("h1", { text: p.title }),
+      isLaunch && el("p", { class: "tagline", text: p.tagline }),
+      p.body && el("div", { class: "post-body" }, ...p.body.split(/\n{2,}/).map((t) => el("p", { text: t }))),
+      el("div", { class: "post-foot" },
+        isLaunch ? el("span", { class: `tag ${LAUNCH_STATUS[p.status]?.[1] || ""}`, text: LAUNCH_STATUS[p.status]?.[0] || "In safety review" }) : el("span", { class: `tag ${TAG_CLASS[p.tag] || ""}`, text: HUB_TAGS[p.tag] || p.tag }),
+        isLaunch && el("span", { text: p.repo }),
+        isLaunch && app && linkBtn("Open in Obstat", appHash(app)),
+        ...postTools)))
+
+  // comments: top-level ones in order, each with its replies under it
+  const thread = el("div", { class: "comments" })
+  const byId = new Map(p.comments.map((c) => [c.id, c]))
+  const drawComments = () => {
+    const roots = p.comments.filter((c) => !c.parent || !byId.has(c.parent))
+    thread.replaceChildren(...(roots.length ? roots.map((c) => el("div", { class: "thread" }, commentRow(c),
+      ...p.comments.filter((r) => r.parent === c.id).map((r) => el("div", { class: "reply" }, commentRow(r)))))
+      : [el("p", { class: "muted", text: "No comments yet." })]))
+  }
+  const commentRow = (c) => {
+    const row = el("div", { class: `comment${c.deleted ? " is-deleted" : ""}` })
+    const mine = acct.name && c.name === acct.name
+    const tools = c.deleted ? [] : [
+      acct.name && el("button", { class: "link small", text: "Reply", onclick: () => row.after(writeBox(c.parent || c.id)) }),
+      mine && act("Delete", "delete", c.id, "Delete your comment?", () => removeComment(c)),
+      !mine && acct.name && !acct.badge && act("Report", "report", c.id, null, (e) => { e.target.textContent = "Reported"; e.target.disabled = true }),
+      !mine && acct.badge && act("Delete", "delete", c.id, "Delete this comment for everyone?", () => removeComment(c)),
+    ]
+    row.append(c.deleted ? el("div", { class: "by" }, el("span", { text: "Deleted" })) : byline(c), el("p", { text: c.text }), el("div", { class: "comment-tools" }, ...tools))
+    return row
+  }
+  const removeComment = (c) => {
+    if (p.comments.some((r) => r.parent === c.id)) Object.assign(c, { deleted: true, text: "[deleted]", name: "" })
+    else { p.comments = p.comments.filter((x) => x !== c); byId.delete(c.id) }
+    drawComments()
+  }
+  const writeBox = (parent) => {
+    const wrap = el("div", { class: "composer" })
+    const box = el("textarea", { rows: parent ? "2" : "3", maxlength: "2000", placeholder: parent ? "Write a reply" : `Comment as ${acct.name}`, "aria-label": "Comment" })
+    const send = el("button", { class: "btn small", text: parent ? "Reply" : "Comment", onclick: async () => {
+      if (!box.value.trim()) return
+      send.disabled = true
+      try {
+        const c = await ask("hubComment", p.id, box.value, parent || null)
+        p.comments.push(c); byId.set(c.id, c); box.value = ""
+        if (parent) wrap.remove()
+        drawComments()
+      } catch (x) { status.textContent = x.message }
+      send.disabled = false
+    } })
+    wrap.append(box, send)
+    return wrap
+  }
+  drawComments()
+  const bottom = acct.name ? writeBox(null) : needAccount("comment", () => render())
+  return [
+    el("a", { class: "back", href: isLaunch ? "#/launches" : "#/hub", text: isLaunch ? "← Launches" : "← Discussions" }),
+    communityTabs(channels, isLaunch ? "launches" : "hub"),
+    head,
+    el("h2", { class: "group-h", text: plural(p.comments.filter((c) => !c.deleted).length, "comment") }),
+    el("div", { class: "box" }, thread, bottom, status)]
+}
+
+function launchRow(p, i) {
+  const [label, cls] = LAUNCH_STATUS[p.status] || LAUNCH_STATUS.review
+  const app = (repos || []).find((e) => e.id === p.repo)
+  return el("a", { class: "post launch", href: `#/post/${p.id}` },
+    el("span", { class: "rank", text: String(i + 1) }),
+    mark(p.title, app || null),
+    el("div", { class: "post-in" },
+      el("h3", { text: p.title }), el("p", { text: p.tagline }),
+      el("div", { class: "post-foot" }, el("span", { class: `tag ${cls}`, text: label }), el("span", { text: `by ${p.name}` }), el("span", {}, icon("chat"), String(p.comments)))),
+    voter(p, { down: false }))
+}
+
+async function launchesView(period = "week") {
+  const signin = period === "signin"
+  if (!Object.hasOwn(PERIOD_NAMES, period)) period = "week"
+  const [channels, acct] = await Promise.all([askKept("channels").catch(() => ({})), askKept("account").catch(() => ({ name: null }))])
+  let data, failed
+  try { data = await ask("hubList", { kind: "launch", period, sort: launchSort }) } catch (x) { failed = x.message }
+  const list = el("div", { class: "posts" })
+  const draw = () => list.replaceChildren(...(failed ? [emptyBox("Couldn't load launches", failed)]
+    : data.posts.length ? data.posts.map(launchRow)
+    : [emptyBox(`No launches ${period === "all" ? "yet" : PERIOD_NAMES[period].toLowerCase()}`, "Made something that runs on Obstat? Launch it here so people can find it.")]))
+  draw()
+  const slot = el("div")
+  const openForm = (a) => slot.replaceChildren(a.name ? composer("launch", (p) => { slot.replaceChildren(); if (p) { data.posts.unshift(p); draw() } }) : needAccount("launch your app", openForm))
+  if (signin && !acct.name) slot.replaceChildren(needAccount("upvote launches", () => go("#/launches")))
+  const f = data?.featured
+  const featured = f && el("a", { class: "box featured", href: `#/post/${f.id}` },
+    el("span", { class: "tag tag-violet", text: "Launch of the week" }),
+    el("div", { class: "featured-in" }, mark(f.title, (repos || []).find((e) => e.id === f.repo) || null),
+      el("div", {}, el("h2", { text: f.title }), el("p", { text: f.tagline }),
+        el("div", { class: "post-foot" }, el("span", { class: `tag ${LAUNCH_STATUS[f.status][1]}`, text: LAUNCH_STATUS[f.status][0] }), el("span", { text: `${plural(f.score, "upvote")} · by ${f.name}` })))))
+  return [
+    el("div", { class: "page-h" }, el("div", {}, el("h1", { text: "Launches" }), el("p", { class: "sub", text: "New apps from the community. Upvote the ones you like; every app is safety-reviewed before you can install it." })),
+      el("button", { class: "btn", onclick: async () => openForm(await askKept("account")) }, icon("plus"), "Launch your app")),
+    communityTabs(channels, "launches"),
+    el("div", { class: "hub-filters" }, segLinks(PERIOD_NAMES, period, (k) => `#/launches/${k}`),
+      el("div", { class: "seg sort" }, ...Object.entries({ top: "Most upvoted", new: "Newest" }).map(([k, label]) =>
+        el("button", { "aria-pressed": String(k === launchSort), text: label, onclick: () => { launchSort = k; render() } })))),
+    slot, featured,
+    hubGrid([list],
+      sideBox("How launches work",
+        el("ol", { class: "steps" },
+          el("li", { text: "Add your GitHub repo to Obstat. It goes into safety review." }),
+          el("li", { text: "Launch it here. People can read about it and upvote it straight away." }),
+          el("li", { text: "Once Obstat has reviewed (and tested) the exact code, Install appears for everyone." }))),
+      sideBox("Badges",
+        el("p", {}, el("span", { class: "tag tag-green", text: "Reviewed and tested" }), " Obstat read the code and ran it."),
+        el("p", {}, el("span", { class: "tag tag-blue", text: "Reviewed" }), " Obstat read the code."),
+        el("p", {}, el("span", { class: "tag tag-amber", text: "In safety review" }), " Not installable yet.")))]
 }
 
 // ---------- home ----------
@@ -1080,6 +1387,73 @@ async function homeView() {
   ]
 }
 
+// ---------- insights: how apps and this computer are doing, all kept locally ----------
+
+let insightsDays = 30
+const SVGEL = (tag, attrs = {}) => { const n = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n }
+// hours per day as an area chart, drawn as SVG
+function usageChart(perDay) {
+  const W = 640, H = 170
+  const max = Math.max(1, ...perDay.map((d) => d.hours))
+  const pts = perDay.map((d, i) => [perDay.length > 1 ? (i * W) / (perDay.length - 1) : W / 2, H - (d.hours / max) * (H - 8)])
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ")
+  const svg = SVGEL("svg", { viewBox: `0 -6 ${W} ${H + 26}`, class: "chart", role: "img", "aria-label": "Hours apps were running each day" })
+  const defs = SVGEL("defs"); const g = SVGEL("linearGradient", { id: "usage-fill", x1: "0", y1: "0", x2: "0", y2: "1" })
+  g.append(SVGEL("stop", { offset: "0", class: "chart-fill-top" }), SVGEL("stop", { offset: "1", class: "chart-fill-bottom" }))
+  defs.append(g); svg.append(defs)
+  for (let k = 1; k < 4; k++) svg.append(SVGEL("line", { x1: 0, x2: W, y1: (H * k) / 4, y2: (H * k) / 4, class: "chart-grid" }))
+  svg.append(SVGEL("path", { d: `${line} L${W} ${H} L0 ${H} Z`, fill: "url(#usage-fill)" }), SVGEL("path", { d: line, class: "chart-line" }))
+  const ticks = perDay.length > 1 ? [0, Math.round((perDay.length - 1) / 2), perDay.length - 1] : [0]
+  for (const i of ticks) {
+    const t = SVGEL("text", { x: pts[i][0], y: H + 18, class: "chart-tick", "text-anchor": i === 0 ? "start" : i === perDay.length - 1 ? "end" : "middle" })
+    t.textContent = new Date(`${perDay[i].day}T12:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+    svg.append(t)
+  }
+  return svg
+}
+// (the window's security policy blocks style="" attributes; setting the style in code is fine)
+function barFill(cls, pct) { const i = el("i", { class: cls }); i.style.width = `${pct}%`; return i }
+async function insightsView() {
+  const d = await ask("insights", insightsDays)
+  const u = d.usage
+  const name = (id) => d.names[id] || id.split("/").pop()
+  const range = el("div", { class: "seg", role: "group", "aria-label": "Time range" },
+    ...[[1, "24h"], [7, "7d"], [30, "30d"], [90, "90d"]].map(([n, label]) => el("button", { type: "button", text: label, "aria-pressed": String(insightsDays === n), onclick: () => { insightsDays = n; render() } })))
+  const change = u.prevHours ? Math.round(((u.hours - u.prevHours) / u.prevHours) * 100) : null
+  const stat = (label, value, note, good) => el("div", {}, el("small", { text: label }), el("b", { text: value }), el("em", { class: good ? "good" : "", text: note }))
+  const top = u.byApp[0]?.hours || 1
+  const BAR = ["violet", "green", "gold", "blue", "pink", "violet"]
+  const rt = Object.values(d.runtimes).filter((r) => r.needed)
+  const what = (r) => r.area === "sandboxes" ? (r.ok ? "Tested in the sandbox" : "Sandbox test stopped") : r.script === "install.js" ? (r.ok ? "Installed" : "Install stopped") : r.script === "update.js" ? "Updated" : r.script === "reset.js" ? "Reset" : `Ran ${r.script}`
+  const tag = (r) => r.ok === false ? ["Stopped", "tag-red"] : r.area === "sandboxes" ? ["Sandbox", "tag-violet"] : r.script === "install.js" ? ["Installed", "tag-green"] : ["Done", "tag-blue"]
+  return [
+    el("div", { class: "page-h" }, el("div", {}, el("h1", { text: "Insights" }), el("p", { class: "sub", text: "How your apps and this computer are doing. Everything here stays on your computer." })), range),
+    el("div", { class: "stats insight-stats" },
+      stat("Apps installed", String(d.installed), u.installs ? `+${u.installs} in this time` : "None new in this time", !!u.installs),
+      stat("Running now", String(d.running.length), d.running.length ? d.running.slice(0, 3).join(", ") : "Nothing running"),
+      stat("Hours used", String(u.hours), change === null ? "Apps you started" : `${change >= 0 ? "+" : ""}${change}% vs the time before`, change > 0),
+      stat("Disk used by apps", bytes(d.disk.apps || 0), d.disk.free == null ? "" : `${bytes(d.disk.free)} free`)),
+    el("div", { class: "insight-row" },
+      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Time apps were running" }), el("small", { text: "hours per day" })),
+        u.hours ? usageChart(u.perDay) : el("p", { class: "mini-empty", text: "Start an app and its time shows up here." })),
+      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Most used" }), el("small", { text: "hours" })),
+        ...(u.byApp.length ? u.byApp.map((a, i) => el("div", { class: "ubar" },
+          el("div", { class: "ubar-l" }, el("b", { text: name(a.id) }), el("span", { text: `${a.hours} h` })),
+          el("div", { class: "ubar-t" }, barFill(BAR[i], Math.max(4, Math.round((a.hours / top) * 100))))))
+          : [el("p", { class: "muted", text: "Nothing yet." })]))),
+    el("div", { class: "insight-row" },
+      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Recent activity" })),
+        ...(u.recent.length ? u.recent.slice(0, 5).map((r) => { const [t, c] = tag(r); return el("div", { class: "act" }, mark(name(r.id)), el("div", {}, el("b", { text: `${name(r.id)}: ${what(r).toLowerCase()}` }), el("small", { text: ago(new Date(r.at).toISOString()) })), el("span", { class: `tag ${c}`, text: t })) })
+          : [el("p", { class: "muted", text: "Installs, updates and sandbox tests show up here." })])),
+      el("section", { class: "box health" }, el("div", { class: "box-h" }, el("h2", { text: "System health" })),
+        el("div", { class: `h ${listError ? "w" : ""}` }, "Obstat app list", el("span", { text: listError ? "Can't reach it" : "Online" })),
+        el("div", { class: `h ${d.sandbox.mode === "folder" ? "w" : ""}` }, "Sandbox", el("span", { text: d.sandbox.mode === "folder" ? "Test folder only" : "Ready" })),
+        el("div", { class: `h ${rt.every((r) => r.ready) ? "" : "w"}` }, "Python, Node, git", el("span", { text: rt.every((r) => r.ready) ? "Ready" : "Not downloaded yet" })),
+        el("div", { class: `h ${d.disk.free != null && d.disk.free < 10e9 ? "w" : ""}` }, "Free disk space", el("span", { text: d.disk.free == null ? "Unknown" : d.disk.free < 10e9 ? `Low · ${bytes(d.disk.free)}` : bytes(d.disk.free) })),
+        el("p", { class: "priv", text: "Kept on this computer, never sent anywhere." }))),
+  ]
+}
+
 // ---------- create an app ----------
 
 const IDEAS = [
@@ -1253,9 +1627,12 @@ async function termsGate() {
   agree.focus()
 }
 
-// Chat channels and News share one Community page
+// The Hub, chat channels and News share one Community page
 function communityTabs(channels, active) {
   return el("div", { class: "chan-tabs", role: "tablist" },
+    el("a", { href: "#/hub", role: "tab", "aria-selected": String(active === "hub"), text: "Discussions" }),
+    el("a", { href: "#/launches", role: "tab", "aria-selected": String(active === "launches"), text: "Launches" }),
+    el("span", { class: "sep", "aria-hidden": "true" }),
     ...Object.entries(channels).map(([id, name]) => el("a", { href: `#/chat/${id}`, role: "tab", "aria-selected": String(id === active), text: `# ${name}` })),
     el("span", { class: "sep", "aria-hidden": "true" }),
     el("a", { href: "#/news", role: "tab", "aria-selected": String(active === "news"), text: "News" }))
@@ -1399,7 +1776,19 @@ function appendLog(id, text) {
   if (stick) logBody.scrollTop = logBody.scrollHeight
 }
 
+// ---------- the apps running now, under the menu ----------
+
+let runningTimer
+function showRunningSoon() { clearTimeout(runningTimer); runningTimer = setTimeout(showRunning, 250) }
+async function showRunning() {
+  const on = (await ask("apps").catch(() => [])).filter((a) => a.running)
+  $("running").hidden = !on.length
+  $("running-h").textContent = on.length === 1 ? "1 app running" : `${on.length} apps running`
+  $("running-l").replaceChildren(...on.slice(0, 5).map((a) => el("a", { href: appHash(a), text: a.name, title: a.name })))
+}
+
 window.obstat.onEvent((ev) => {
+  if (ev.type === "state") showRunningSoon()
   if (ev.type === "open-app" && typeof ev.id === "string") go(`#/app/${ev.id.split("/").map(encodeURIComponent).join("/")}`)
   else if (ev.type === "log") appendLog(ev.id, ev.text)
   else if (ev.type === "progress") {
@@ -1528,7 +1917,7 @@ async function render() {
   // a running app's page sits on top of the window; only the Run screen shows it
   if (route !== "run") window.obstat.hideView()
   view.classList.toggle("full", route === "run")
-  const SECTION = { app: "apps", divina: "apps", news: "chat", sandbox: "tools", disk: "tools", plugins: "tools", skills: "tools", logs: "tools", server: "tools", autolaunch: "tools", reviews: "help", updates: "help" }
+  const SECTION = { app: "apps", divina: "apps", news: "chat", hub: "chat", post: "chat", launches: "chat", sandbox: "tools", disk: "tools", plugins: "tools", skills: "tools", logs: "tools", server: "tools", autolaunch: "tools", reviews: "help", updates: "help" }
   for (const a of document.querySelectorAll(".menu a[data-route]")) {
     const on = a.dataset.route === (SECTION[route] || route)
     on ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")
@@ -1576,6 +1965,7 @@ info = await ask("info")
 $("ver").textContent = `v${info.version}`
 await loadList()
 render()
+showRunning()
 termsGate()
 ask("updateState").then(showUpdate).catch(() => {})
 checkNews()
