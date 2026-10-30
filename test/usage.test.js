@@ -57,3 +57,15 @@ test("the usage file stays small: old runs go once it passes its size limit", ()
   assert.equal(lines.length, 1)
   assert.match(lines[0], /n\/ew/)
 })
+
+test("a few minutes of use count to the minute, and the page knows when counting began", () => {
+  const h = home()
+  const u = usageLib.create(h, { now: () => NOON })
+  assert.equal(u.summary({ days: 7 }).since, null, "nothing yet")
+  // an app started 4 minutes ago, still running
+  const s = u.summary({ days: 7, live: [{ id: "a/plazai", since: NOON - 4 * 60000 }] })
+  assert.equal(Math.round(s.hours * 60), 4)
+  assert.equal(Math.round(s.byApp[0].hours * 60), 4)
+  assert.ok(s.perDay.at(-1).hours > 0, "today's chart point isn't rounded away")
+  assert.equal(s.since, NOON - 4 * 60000)
+})

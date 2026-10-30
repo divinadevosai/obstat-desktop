@@ -582,7 +582,7 @@ const views = {
       : box.mode === "walls"
         ? el("p", { class: "note ok-note", text: `Tests run inside ${wallsName(box.walls)}: the app can't see your files, Obstat's keys or other apps, and can only change its own test folder. It still has the internet, so it can download what it installs.` })
       : box.platform === "win32"
-        ? el("p", { class: "card-err", text: "Windows Sandbox isn't turned on here, so tests run in a separate test folder instead. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing. On Windows Pro you can turn on Windows Sandbox in \"Turn Windows features on or off\". Windows Home doesn't have it." })
+        ? await winSandboxBox()
         : el("p", { class: "card-err", text: `Tests on this computer run in a separate test folder, because ${box.reason || "no sandbox is available"}. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing.${box.fix ? ` ${box.fix}` : ""}` })
     return page("Sandbox", "Try a repo nobody has reviewed without risking your files.",
       el("ol", { class: "steps-list" },
@@ -868,6 +868,34 @@ const views = {
           n.url && el("a", { href: n.url, text: n.url }))
       })) : emptyBox("No news yet", "Updates and new apps show up here."))
   },
+}
+
+// ---------- Windows Sandbox: turning it on ----------
+
+// Shown on the Sandbox page while Windows Sandbox is off: what that means, and a
+// button that turns it on (Windows Pro, Enterprise, Education) or why it can't (Home).
+async function winSandboxBox() {
+  const st = await ask("winSandbox").catch(() => ({ canTurnOn: false }))
+  const box = el("div", { class: "card-err win-sandbox" },
+    el("p", { text: "Windows Sandbox isn't turned on here, so tests run in a separate test folder instead. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing." }))
+  if (st.on) box.replaceChildren(el("p", { text: "Windows Sandbox is turned on. Restart your PC to start using it." }))
+  else if (st.home) box.append(el("p", { class: "muted", text: "Windows Home doesn't include Windows Sandbox. It comes with Windows Pro, Enterprise and Education." }))
+  else if (st.canTurnOn) {
+    const msg = el("p", { class: "muted", text: "Obstat can turn it on for you. Windows asks for permission once, then your PC needs a restart." })
+    const btn = el("button", { class: "btn small", text: "Turn on Windows Sandbox", onclick: async () => {
+      btn.disabled = true
+      btn.textContent = "Turning it on…"
+      msg.textContent = "Say yes when Windows asks for permission. This can take a few minutes."
+      try {
+        await ask("turnOnWinSandbox")
+        btn.remove()
+        msg.className = "ok-note"
+        msg.textContent = "Windows Sandbox is turned on. Restart your PC, then tests here run inside it. If it won't open after the restart, virtualization may be off in your PC's BIOS settings."
+      } catch (x) { msg.textContent = x.message; btn.disabled = false; btn.textContent = "Try again" }
+    } })
+    box.append(msg, el("div", { class: "row-btns" }, btn))
+  }
+  return box
 }
 
 // ---------- community hub: discussions and launches ----------
@@ -1394,7 +1422,8 @@ const SVGEL = (tag, attrs = {}) => { const n = document.createElementNS(SVG, tag
 // hours per day as an area chart, drawn as SVG
 function usageChart(perDay) {
   const W = 640, H = 170
-  const max = Math.max(1, ...perDay.map((d) => d.hours))
+  // a quarter hour at least, so a few minutes still shows as a small rise
+  const max = Math.max(0.25, ...perDay.map((d) => d.hours))
   const pts = perDay.map((d, i) => [perDay.length > 1 ? (i * W) / (perDay.length - 1) : W / 2, H - (d.hours / max) * (H - 8)])
   const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ")
   const svg = SVGEL("svg", { viewBox: `0 -6 ${W} ${H + 26}`, class: "chart", role: "img", "aria-label": "Hours apps were running each day" })
@@ -1413,6 +1442,8 @@ function usageChart(perDay) {
 }
 // (the window's security policy blocks style="" attributes; setting the style in code is fine)
 function barFill(cls, pct) { const i = el("i", { class: cls }); i.style.width = `${pct}%`; return i }
+// 0.25 h -> "15 min", 3.5 -> "3.5 h"
+const dur = (h) => h <= 0 ? "0 min" : h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : `${Math.round(h * 10) / 10} h`
 async function insightsView() {
   const d = await ask("insights", insightsDays)
   const u = d.usage
@@ -1425,20 +1456,30 @@ async function insightsView() {
   const BAR = ["violet", "green", "gold", "blue", "pink", "violet"]
   const rt = Object.values(d.runtimes).filter((r) => r.needed)
   const what = (r) => r.area === "sandboxes" ? (r.ok ? "Tested in the sandbox" : "Sandbox test stopped") : r.script === "install.js" ? (r.ok ? "Installed" : "Install stopped") : r.script === "update.js" ? "Updated" : r.script === "reset.js" ? "Reset" : `Ran ${r.script}`
+  // the disk numbers arrive on their own (adding up big apps takes a while)
+  const diskStat = stat("Disk used by apps", "…", "Counting…")
+  const freeRow = el("div", { class: "h" }, "Free disk space", el("span", { text: "Checking…" }))
+  ask("insightsDisk").then((disk) => {
+    diskStat.querySelector("b").textContent = disk.apps == null ? "?" : bytes(disk.apps)
+    diskStat.querySelector("em").textContent = disk.free == null ? "" : `${bytes(disk.free)} free`
+    const low = disk.free != null && disk.free < 10e9
+    freeRow.classList.toggle("w", low)
+    freeRow.querySelector("span").textContent = disk.free == null ? "Unknown" : low ? `Low · ${bytes(disk.free)}` : bytes(disk.free)
+  }).catch(() => { diskStat.querySelector("em").textContent = "Couldn't count" })
   const tag = (r) => r.ok === false ? ["Stopped", "tag-red"] : r.area === "sandboxes" ? ["Sandbox", "tag-violet"] : r.script === "install.js" ? ["Installed", "tag-green"] : ["Done", "tag-blue"]
   return [
     el("div", { class: "page-h" }, el("div", {}, el("h1", { text: "Insights" }), el("p", { class: "sub", text: "How your apps and this computer are doing. Everything here stays on your computer." })), range),
     el("div", { class: "stats insight-stats" },
       stat("Apps installed", String(d.installed), u.installs ? `+${u.installs} in this time` : "None new in this time", !!u.installs),
       stat("Running now", String(d.running.length), d.running.length ? d.running.slice(0, 3).join(", ") : "Nothing running"),
-      stat("Hours used", String(u.hours), change === null ? "Apps you started" : `${change >= 0 ? "+" : ""}${change}% vs the time before`, change > 0),
-      stat("Disk used by apps", bytes(d.disk.apps || 0), d.disk.free == null ? "" : `${bytes(d.disk.free)} free`)),
+      stat("Time used", dur(u.hours), change === null ? (u.since ? `Counted since ${day(new Date(u.since).toISOString())}` : "Apps you started") : `${change >= 0 ? "+" : ""}${change}% vs the time before`, change > 0),
+      diskStat),
     el("div", { class: "insight-row" },
       el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Time apps were running" }), el("small", { text: "hours per day" })),
-        u.hours ? usageChart(u.perDay) : el("p", { class: "mini-empty", text: "Start an app and its time shows up here." })),
-      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Most used" }), el("small", { text: "hours" })),
+        u.perDay.some((p) => p.hours > 0) ? usageChart(u.perDay) : el("p", { class: "mini-empty", text: "Start an app and its time shows up here." })),
+      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Most used" }), el("small", { text: "time" })),
         ...(u.byApp.length ? u.byApp.map((a, i) => el("div", { class: "ubar" },
-          el("div", { class: "ubar-l" }, el("b", { text: name(a.id) }), el("span", { text: `${a.hours} h` })),
+          el("div", { class: "ubar-l" }, el("b", { text: name(a.id) }), el("span", { text: dur(a.hours) })),
           el("div", { class: "ubar-t" }, barFill(BAR[i], Math.max(4, Math.round((a.hours / top) * 100))))))
           : [el("p", { class: "muted", text: "Nothing yet." })]))),
     el("div", { class: "insight-row" },
@@ -1447,9 +1488,9 @@ async function insightsView() {
           : [el("p", { class: "muted", text: "Installs, updates and sandbox tests show up here." })])),
       el("section", { class: "box health" }, el("div", { class: "box-h" }, el("h2", { text: "System health" })),
         el("div", { class: `h ${listError ? "w" : ""}` }, "Obstat app list", el("span", { text: listError ? "Can't reach it" : "Online" })),
-        el("div", { class: `h ${d.sandbox.mode === "folder" ? "w" : ""}` }, "Sandbox", el("span", { text: d.sandbox.mode === "folder" ? "Test folder only" : "Ready" })),
+        el("div", { class: `h ${d.sandbox.mode === "folder" ? "w" : ""}` }, "Sandbox", d.sandbox.mode === "folder" ? el("a", { href: "#/sandbox", text: "Test folder only · fix" }) : el("span", { text: "Ready" })),
         el("div", { class: `h ${rt.every((r) => r.ready) ? "" : "w"}` }, "Python, Node, git", el("span", { text: rt.every((r) => r.ready) ? "Ready" : "Not downloaded yet" })),
-        el("div", { class: `h ${d.disk.free != null && d.disk.free < 10e9 ? "w" : ""}` }, "Free disk space", el("span", { text: d.disk.free == null ? "Unknown" : d.disk.free < 10e9 ? `Low · ${bytes(d.disk.free)}` : bytes(d.disk.free) })),
+        freeRow,
         el("p", { class: "priv", text: "Kept on this computer, never sent anywhere." }))),
   ]
 }
