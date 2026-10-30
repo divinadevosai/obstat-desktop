@@ -132,7 +132,7 @@ const ICONS = {
   edit: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4", back: "M10 6l-6 6 6 6M4 12h16", prev: "M15 5l-7 7 7 7", next: "M9 5l7 7-7 7", copy: "M8 8h11v11H8zM5 16V5h11", trash: "M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12",
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1", shield: "M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z",
   compass: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM15.5 8.5l-2 5-5 2 2-5z", sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z",
-  chat: "M4 5h16v11H9l-5 4z", news: "M4 10v4h3l7 4V6L7 10zM17 9a4 4 0 0 1 0 6", disk: "M4 6h16v12H4zM4 14h16M8 17h.01", logs: "M6 4h9l3 3v13H6zM9 10h6M9 14h6M9 18h4",
+  insights: "M4 20V10M10 20V4M16 20v-7M22 20H2", chat: "M4 5h16v11H9l-5 4z", news: "M4 10v4h3l7 4V6L7 10zM17 9a4 4 0 0 1 0 6", disk: "M4 6h16v12H4zM4 14h16M8 17h.01", logs: "M6 4h9l3 3v13H6zM9 10h6M9 14h6M9 18h4",
   plug: "M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5", server: "M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01", power: "M12 3v8M7 6a7 7 0 1 0 10 0",
   doc: "M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10.5a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5zM14 3.5V8h4M9 12h6M9 15.5h6",
   lock: "M6.5 11h11v9h-11zM8.5 11V8a3.5 3.5 0 0 1 7 0v3",
@@ -732,6 +732,8 @@ const views = {
         : [emptyBox("No apps installed", "Once an app is installed, you can set it to start with Obstat here.")])))
   },
 
+  insights: () => insightsView(),
+
   settings: async () => page("Settings", "Storage, startup and troubleshooting.",
     el("h2", { class: "group-h", text: "General" }),
     el("dl", { class: "rows" },
@@ -1108,6 +1110,73 @@ async function homeView() {
           el("div", { class: "feed" }, ...(chats.length ? chats.map((m) => el("a", { href: `#/chat/${m.channel}` },
             el("small", { text: `#${m.channelName} · ${ago(m.at)}` }), el("b", {}, m.name, badge(m)), el("p", { text: m.text })))
             : [el("p", { class: "muted", text: "Quiet right now. Say hello in the chat." })]))))),
+  ]
+}
+
+// ---------- insights: how apps and this computer are doing, all kept locally ----------
+
+let insightsDays = 30
+const SVGEL = (tag, attrs = {}) => { const n = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n }
+// hours per day as an area chart, drawn as SVG
+function usageChart(perDay) {
+  const W = 640, H = 170
+  const max = Math.max(1, ...perDay.map((d) => d.hours))
+  const pts = perDay.map((d, i) => [perDay.length > 1 ? (i * W) / (perDay.length - 1) : W / 2, H - (d.hours / max) * (H - 8)])
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ")
+  const svg = SVGEL("svg", { viewBox: `0 -6 ${W} ${H + 26}`, class: "chart", role: "img", "aria-label": "Hours apps were running each day" })
+  const defs = SVGEL("defs"); const g = SVGEL("linearGradient", { id: "usage-fill", x1: "0", y1: "0", x2: "0", y2: "1" })
+  g.append(SVGEL("stop", { offset: "0", class: "chart-fill-top" }), SVGEL("stop", { offset: "1", class: "chart-fill-bottom" }))
+  defs.append(g); svg.append(defs)
+  for (let k = 1; k < 4; k++) svg.append(SVGEL("line", { x1: 0, x2: W, y1: (H * k) / 4, y2: (H * k) / 4, class: "chart-grid" }))
+  svg.append(SVGEL("path", { d: `${line} L${W} ${H} L0 ${H} Z`, fill: "url(#usage-fill)" }), SVGEL("path", { d: line, class: "chart-line" }))
+  const ticks = perDay.length > 1 ? [0, Math.round((perDay.length - 1) / 2), perDay.length - 1] : [0]
+  for (const i of ticks) {
+    const t = SVGEL("text", { x: pts[i][0], y: H + 18, class: "chart-tick", "text-anchor": i === 0 ? "start" : i === perDay.length - 1 ? "end" : "middle" })
+    t.textContent = new Date(`${perDay[i].day}T12:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+    svg.append(t)
+  }
+  return svg
+}
+// (the window's security policy blocks style="" attributes; setting the style in code is fine)
+function barFill(cls, pct) { const i = el("i", { class: cls }); i.style.width = `${pct}%`; return i }
+async function insightsView() {
+  const d = await ask("insights", insightsDays)
+  const u = d.usage
+  const name = (id) => d.names[id] || id.split("/").pop()
+  const range = el("div", { class: "seg", role: "group", "aria-label": "Time range" },
+    ...[[1, "24h"], [7, "7d"], [30, "30d"], [90, "90d"]].map(([n, label]) => el("button", { type: "button", text: label, "aria-pressed": String(insightsDays === n), onclick: () => { insightsDays = n; render() } })))
+  const change = u.prevHours ? Math.round(((u.hours - u.prevHours) / u.prevHours) * 100) : null
+  const stat = (label, value, note, good) => el("div", {}, el("small", { text: label }), el("b", { text: value }), el("em", { class: good ? "good" : "", text: note }))
+  const top = u.byApp[0]?.hours || 1
+  const BAR = ["violet", "green", "gold", "blue", "pink", "violet"]
+  const rt = Object.values(d.runtimes).filter((r) => r.needed)
+  const what = (r) => r.area === "sandboxes" ? (r.ok ? "Tested in the sandbox" : "Sandbox test stopped") : r.script === "install.js" ? (r.ok ? "Installed" : "Install stopped") : r.script === "update.js" ? "Updated" : r.script === "reset.js" ? "Reset" : `Ran ${r.script}`
+  const tag = (r) => r.ok === false ? ["Stopped", "tag-red"] : r.area === "sandboxes" ? ["Sandbox", "tag-violet"] : r.script === "install.js" ? ["Installed", "tag-green"] : ["Done", "tag-blue"]
+  return [
+    el("div", { class: "page-h" }, el("div", {}, el("h1", { text: "Insights" }), el("p", { class: "sub", text: "How your apps and this computer are doing. Everything here stays on your computer." })), range),
+    el("div", { class: "stats insight-stats" },
+      stat("Apps installed", String(d.installed), u.installs ? `+${u.installs} in this time` : "None new in this time", !!u.installs),
+      stat("Running now", String(d.running.length), d.running.length ? d.running.slice(0, 3).join(", ") : "Nothing running"),
+      stat("Hours used", String(u.hours), change === null ? "Apps you started" : `${change >= 0 ? "+" : ""}${change}% vs the time before`, change > 0),
+      stat("Disk used by apps", bytes(d.disk.apps || 0), d.disk.free == null ? "" : `${bytes(d.disk.free)} free`)),
+    el("div", { class: "insight-row" },
+      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Time apps were running" }), el("small", { text: "hours per day" })),
+        u.hours ? usageChart(u.perDay) : el("p", { class: "mini-empty", text: "Start an app and its time shows up here." })),
+      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Most used" }), el("small", { text: "hours" })),
+        ...(u.byApp.length ? u.byApp.map((a, i) => el("div", { class: "ubar" },
+          el("div", { class: "ubar-l" }, el("b", { text: name(a.id) }), el("span", { text: `${a.hours} h` })),
+          el("div", { class: "ubar-t" }, barFill(BAR[i], Math.max(4, Math.round((a.hours / top) * 100))))))
+          : [el("p", { class: "muted", text: "Nothing yet." })]))),
+    el("div", { class: "insight-row" },
+      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Recent activity" })),
+        ...(u.recent.length ? u.recent.slice(0, 5).map((r) => { const [t, c] = tag(r); return el("div", { class: "act" }, mark(name(r.id)), el("div", {}, el("b", { text: `${name(r.id)}: ${what(r).toLowerCase()}` }), el("small", { text: ago(new Date(r.at).toISOString()) })), el("span", { class: `tag ${c}`, text: t })) })
+          : [el("p", { class: "muted", text: "Installs, updates and sandbox tests show up here." })])),
+      el("section", { class: "box health" }, el("div", { class: "box-h" }, el("h2", { text: "System health" })),
+        el("div", { class: `h ${listError ? "w" : ""}` }, "Obstat app list", el("span", { text: listError ? "Can't reach it" : "Online" })),
+        el("div", { class: `h ${d.sandbox.mode === "folder" ? "w" : ""}` }, "Sandbox", el("span", { text: d.sandbox.mode === "folder" ? "Test folder only" : "Ready" })),
+        el("div", { class: `h ${rt.every((r) => r.ready) ? "" : "w"}` }, "Python, Node, git", el("span", { text: rt.every((r) => r.ready) ? "Ready" : "Not downloaded yet" })),
+        el("div", { class: `h ${d.disk.free != null && d.disk.free < 10e9 ? "w" : ""}` }, "Free disk space", el("span", { text: d.disk.free == null ? "Unknown" : d.disk.free < 10e9 ? `Low · ${bytes(d.disk.free)}` : bytes(d.disk.free) })),
+        el("p", { class: "priv", text: "Kept on this computer, never sent anywhere." }))),
   ]
 }
 

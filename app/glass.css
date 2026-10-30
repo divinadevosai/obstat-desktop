@@ -138,3 +138,51 @@ input,select,.composer textarea,.composer input,.form-card textarea{background:v
 .seg button:focus-visible{outline:2px solid var(--indigo)}
 
 @media (prefers-reduced-motion:reduce){.quick a,.tile{transition:none}}
+
+/* ---------- Insights ---------- */
+
+.page-h{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.page-h .sub{margin-bottom:10px}
+.insight-stats{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:16px 0}
+.insight-stats div{border-radius:18px}
+.insight-stats small{display:block;font-size:13px;color:var(--dim)}
+.insight-stats b{font:650 30px var(--ui);letter-spacing:-.02em;color:var(--bone);margin:6px 0 4px}
+.insight-stats em{font-style:normal;font-size:12.5px;color:var(--dim)}
+.insight-stats em.good{color:var(--ok);font-weight:600}
+.insight-row{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;margin-bottom:16px;align-items:start}
+.box{background:var(--panel);border:1px solid var(--edge);border-radius:20px;padding:16px 18px;box-shadow:var(--shadow);backdrop-filter:blur(22px) saturate(1.4);min-width:0}
+.box-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.box-h h2{margin:0;font-size:15.5px}
+.box-h small{font-size:12px;color:var(--dim)}
+.chart{width:100%;height:auto;display:block}
+/* the app draws every svg as an outlined icon; the chart's fill and labels mustn't be */
+.chart path,.chart text{stroke:none}
+.chart .chart-line{stroke:var(--acc)}
+.chart-grid{stroke:var(--line)}
+.chart-line{fill:none;stroke:var(--acc);stroke-width:2.6;stroke-linejoin:round}
+.chart-fill-top{stop-color:var(--acc);stop-opacity:.32}
+.chart-fill-bottom{stop-color:var(--acc);stop-opacity:0}
+.chart-tick{font:11px var(--mono);fill:var(--dim)}
+.ubar{margin:11px 0}
+.ubar-l{display:flex;justify-content:space-between;font-size:13.5px}
+.ubar-l span{font:12px var(--mono);color:var(--dim)}
+.ubar-t{height:7px;border-radius:9px;background:var(--line);margin-top:6px;overflow:hidden}
+.ubar-t i{display:block;height:100%;border-radius:9px}
+.ubar-t .violet{background:linear-gradient(90deg,#8b86ff,#5b57e0)} .ubar-t .green{background:linear-gradient(90deg,#4fd08b,#26995c)}
+.ubar-t .gold{background:linear-gradient(90deg,#f0b65b,#c98a2a)} .ubar-t .blue{background:linear-gradient(90deg,#5b9dff,#2f6fe0)} .ubar-t .pink{background:linear-gradient(90deg,#f08ab0,#c94f86)}
+.act{display:flex;align-items:center;gap:12px;padding:10px 2px;border-top:1px solid var(--line);font-size:13.5px}
+.act:first-of-type{border-top:0}
+.act .mark{width:32px;height:32px;border-radius:10px;font-size:14px;flex:none}
+.act > div{flex:1;min-width:0}
+.act b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act small{color:var(--dim);font-size:12px}
+.tag{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.tag-green{color:var(--ok);background:rgba(47,158,99,.14)} .tag-blue{color:#3a7bea;background:rgba(58,123,234,.13)}
+.tag-violet{color:var(--indigo);background:rgba(91,87,224,.14)} .tag-red{color:var(--amber);background:rgba(214,72,72,.12)}
+.health .h{display:flex;align-items:center;gap:10px;padding:8px 2px;font-size:13.5px}
+.health .h::before{content:"";flex:none;width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(47,158,99,.16)}
+.health .h.w::before{background:#e0a21c;box-shadow:0 0 0 3px rgba(224,162,28,.18)}
+.health .h span{margin-left:auto;font-size:12.5px;color:var(--ok);font-weight:600}
+.health .h.w span{color:#b07a10}
+.priv{font-size:12px;color:var(--dim);margin:10px 0 0}
+@media (max-width:1100px){.insight-row{grid-template-columns:1fr}}
