@@ -79,6 +79,11 @@ jobs:
       - run: npm test
       - run: npm pkg set version=0.2.${{ github.run_number }}
       - run: npm run dist:mac
+        env:
+          # electron-builder skips signing on pull requests unless told otherwise. Obstat's
+          # Mac signature is ad-hoc ("identity": "-": no certificate, no secrets), so a pull
+          # request is signed the same way as a release and the check below tests what ships.
+          CSC_FOR_PULL_REQUEST: "true"
       - name: Check both apps were made and are signed, so Apple Silicon will open them
         run: |
           ls dist/Obstat-*-mac-arm64.dmg dist/Obstat-*-mac-x64.dmg dist/Obstat-*-mac-arm64.zip dist/Obstat-*-mac-x64.zip dist/latest-mac.yml
