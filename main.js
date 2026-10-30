@@ -344,7 +344,10 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("app-icon", (id, url) => {
     const mine = typeof id === "string" && apps.get(id)
     const name = mine?.name || (typeof id === "string" ? id.split("/").pop() : null)
-    return icons.get(mine?.installed || mine?.local ? apps.appDir(id) : null, typeof url === "string" ? url : mine?.icon || null, name)
+    // An app from the reviewed list shows the logo the list gives (checked by the team);
+    // the logo in its folder is often a launcher's placeholder. Apps you made use their folder's.
+    const folder = (mine?.installed || mine?.local) && !mine?.reviewed ? apps.appDir(id) : null
+    return icons.get(folder, typeof url === "string" ? url : mine?.icon || null, name)
   })
   handle("runtimes", () => runtimes.status())
   // Microsoft's C++ tools, for apps whose packages build from source (see lib/cpptools.js)

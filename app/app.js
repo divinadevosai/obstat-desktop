@@ -116,8 +116,11 @@ const icons = new Map()
 function mark(name, app) {
   const m = el("div", { class: "mark", "aria-hidden": "true", text: name.slice(0, 1).toUpperCase() })
   if (app?.id) {
-    const key = `${app.id}|${app.icon || ""}|${!!app.installed}`
-    if (!icons.has(key)) icons.set(key, ask("appIcon", app.id, app.icon || null).catch(() => null))
+    // the list's logo wins over the one saved at install, so a corrected logo shows everywhere
+    const listed = repos?.find((r) => r.id === app.id)
+    const url = (listed ? listed.icon : app.icon) || null
+    const key = `${app.id}|${url || ""}|${!!app.installed}`
+    if (!icons.has(key)) icons.set(key, ask("appIcon", app.id, url).catch(() => null))
     icons.get(key).then((src) => { if (src) { m.textContent = ""; m.classList.add("has-img"); m.append(el("img", { src, alt: "" })) } })
   }
   return m
