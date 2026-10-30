@@ -253,21 +253,31 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("add-key", (k) => { const r = keys.add(k || {}); home.log(`key ${r.name} saved`); return r })
   handle("remove-key", (id) => keys.remove(String(id)))
   handle("disk", () => home.disk())
-  // Insights: worked out from what's on this computer, never sent anywhere (lib/usage.js)
+  // Insights: worked out from what's on this computer, never sent anywhere (lib/usage.js).
+  // Adding up the size of every app's files can take a while with big apps, so the page
+  // gets everything else at once and the disk numbers from insights-disk when they're ready.
   handle("insights", async (days) => {
     const list = apps.list()
     const live = list.filter((a) => a.running?.script === "start.js").map((a) => ({ id: a.id, since: a.running.since }))
-    const [disk, box] = await Promise.all([home.disk(), sandbox.info()])
+    const box = await sandbox.info()
     const names = Object.fromEntries(list.map((a) => [a.id, a.name]))
     return {
       usage: usage.summary({ days: [1, 7, 30, 90].includes(days) ? days : 30, live }),
       names,
       installed: list.filter((a) => a.installed).length,
       running: list.filter((a) => a.running).map((a) => a.name),
-      disk: { apps: disk.used.apps, free: disk.free },
       runtimes: runtimes.status(),
       sandbox: { mode: box.mode, walls: box.walls, windows: box.windowsSandbox },
     }
+  })
+  // counted at most every 10 minutes; the page shows the last count while a new one runs
+  let diskCount = null, diskAt = 0
+  handle("insights-disk", async () => {
+    if (!diskCount || Date.now() - diskAt > 10 * 60_000) {
+      diskAt = Date.now()
+      diskCount = home.disk().then((d) => ({ apps: d.used.apps, free: d.free })).catch(() => { diskAt = 0; return { apps: null, free: null } })
+    }
+    return diskCount
   })
   // looking for each tool starts a process, so the answer is kept for a minute
   let toolsSeen = null

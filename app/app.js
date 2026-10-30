@@ -1394,7 +1394,8 @@ const SVGEL = (tag, attrs = {}) => { const n = document.createElementNS(SVG, tag
 // hours per day as an area chart, drawn as SVG
 function usageChart(perDay) {
   const W = 640, H = 170
-  const max = Math.max(1, ...perDay.map((d) => d.hours))
+  // a quarter hour at least, so a few minutes still shows as a small rise
+  const max = Math.max(0.25, ...perDay.map((d) => d.hours))
   const pts = perDay.map((d, i) => [perDay.length > 1 ? (i * W) / (perDay.length - 1) : W / 2, H - (d.hours / max) * (H - 8)])
   const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ")
   const svg = SVGEL("svg", { viewBox: `0 -6 ${W} ${H + 26}`, class: "chart", role: "img", "aria-label": "Hours apps were running each day" })
@@ -1413,6 +1414,8 @@ function usageChart(perDay) {
 }
 // (the window's security policy blocks style="" attributes; setting the style in code is fine)
 function barFill(cls, pct) { const i = el("i", { class: cls }); i.style.width = `${pct}%`; return i }
+// 0.25 h -> "15 min", 3.5 -> "3.5 h"
+const dur = (h) => h <= 0 ? "0 min" : h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : `${Math.round(h * 10) / 10} h`
 async function insightsView() {
   const d = await ask("insights", insightsDays)
   const u = d.usage
@@ -1425,20 +1428,30 @@ async function insightsView() {
   const BAR = ["violet", "green", "gold", "blue", "pink", "violet"]
   const rt = Object.values(d.runtimes).filter((r) => r.needed)
   const what = (r) => r.area === "sandboxes" ? (r.ok ? "Tested in the sandbox" : "Sandbox test stopped") : r.script === "install.js" ? (r.ok ? "Installed" : "Install stopped") : r.script === "update.js" ? "Updated" : r.script === "reset.js" ? "Reset" : `Ran ${r.script}`
+  // the disk numbers arrive on their own (adding up big apps takes a while)
+  const diskStat = stat("Disk used by apps", "…", "Counting…")
+  const freeRow = el("div", { class: "h" }, "Free disk space", el("span", { text: "Checking…" }))
+  ask("insightsDisk").then((disk) => {
+    diskStat.querySelector("b").textContent = disk.apps == null ? "?" : bytes(disk.apps)
+    diskStat.querySelector("em").textContent = disk.free == null ? "" : `${bytes(disk.free)} free`
+    const low = disk.free != null && disk.free < 10e9
+    freeRow.classList.toggle("w", low)
+    freeRow.querySelector("span").textContent = disk.free == null ? "Unknown" : low ? `Low · ${bytes(disk.free)}` : bytes(disk.free)
+  }).catch(() => { diskStat.querySelector("em").textContent = "Couldn't count" })
   const tag = (r) => r.ok === false ? ["Stopped", "tag-red"] : r.area === "sandboxes" ? ["Sandbox", "tag-violet"] : r.script === "install.js" ? ["Installed", "tag-green"] : ["Done", "tag-blue"]
   return [
     el("div", { class: "page-h" }, el("div", {}, el("h1", { text: "Insights" }), el("p", { class: "sub", text: "How your apps and this computer are doing. Everything here stays on your computer." })), range),
     el("div", { class: "stats insight-stats" },
       stat("Apps installed", String(d.installed), u.installs ? `+${u.installs} in this time` : "None new in this time", !!u.installs),
       stat("Running now", String(d.running.length), d.running.length ? d.running.slice(0, 3).join(", ") : "Nothing running"),
-      stat("Hours used", String(u.hours), change === null ? "Apps you started" : `${change >= 0 ? "+" : ""}${change}% vs the time before`, change > 0),
-      stat("Disk used by apps", bytes(d.disk.apps || 0), d.disk.free == null ? "" : `${bytes(d.disk.free)} free`)),
+      stat("Time used", dur(u.hours), change === null ? (u.since ? `Counted since ${day(new Date(u.since).toISOString())}` : "Apps you started") : `${change >= 0 ? "+" : ""}${change}% vs the time before`, change > 0),
+      diskStat),
     el("div", { class: "insight-row" },
       el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Time apps were running" }), el("small", { text: "hours per day" })),
-        u.hours ? usageChart(u.perDay) : el("p", { class: "mini-empty", text: "Start an app and its time shows up here." })),
-      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Most used" }), el("small", { text: "hours" })),
+        u.perDay.some((p) => p.hours > 0) ? usageChart(u.perDay) : el("p", { class: "mini-empty", text: "Start an app and its time shows up here." })),
+      el("section", { class: "box" }, el("div", { class: "box-h" }, el("h2", { text: "Most used" }), el("small", { text: "time" })),
         ...(u.byApp.length ? u.byApp.map((a, i) => el("div", { class: "ubar" },
-          el("div", { class: "ubar-l" }, el("b", { text: name(a.id) }), el("span", { text: `${a.hours} h` })),
+          el("div", { class: "ubar-l" }, el("b", { text: name(a.id) }), el("span", { text: dur(a.hours) })),
           el("div", { class: "ubar-t" }, barFill(BAR[i], Math.max(4, Math.round((a.hours / top) * 100))))))
           : [el("p", { class: "muted", text: "Nothing yet." })]))),
     el("div", { class: "insight-row" },
@@ -1449,7 +1462,7 @@ async function insightsView() {
         el("div", { class: `h ${listError ? "w" : ""}` }, "Obstat app list", el("span", { text: listError ? "Can't reach it" : "Online" })),
         el("div", { class: `h ${d.sandbox.mode === "folder" ? "w" : ""}` }, "Sandbox", el("span", { text: d.sandbox.mode === "folder" ? "Test folder only" : "Ready" })),
         el("div", { class: `h ${rt.every((r) => r.ready) ? "" : "w"}` }, "Python, Node, git", el("span", { text: rt.every((r) => r.ready) ? "Ready" : "Not downloaded yet" })),
-        el("div", { class: `h ${d.disk.free != null && d.disk.free < 10e9 ? "w" : ""}` }, "Free disk space", el("span", { text: d.disk.free == null ? "Unknown" : d.disk.free < 10e9 ? `Low · ${bytes(d.disk.free)}` : bytes(d.disk.free) })),
+        freeRow,
         el("p", { class: "priv", text: "Kept on this computer, never sent anywhere." }))),
   ]
 }

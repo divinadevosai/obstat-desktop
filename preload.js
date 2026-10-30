@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld("obstat", {
   resetCache: call("reset-cache"),
   disk: call("disk"),
   insights: call("insights"),
+  insightsDisk: call("insights-disk"),
   tools: call("tools"),
   openFolder: call("open-folder"),
   autolaunch: call("autolaunch"),
