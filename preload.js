@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld("obstat", {
   runtimes: call("runtimes"),
   cppTools: call("cpp-tools"),
   installCppTools: call("cpp-tools-install"),
+  winSandbox: call("win-sandbox"),
+  turnOnWinSandbox: call("win-sandbox-on"),
   divina: call("divina"),
   installDivina: call("divina-install"),
   showDivina: call("divina-show"),

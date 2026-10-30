@@ -582,7 +582,7 @@ const views = {
       : box.mode === "walls"
         ? el("p", { class: "note ok-note", text: `Tests run inside ${wallsName(box.walls)}: the app can't see your files, Obstat's keys or other apps, and can only change its own test folder. It still has the internet, so it can download what it installs.` })
       : box.platform === "win32"
-        ? el("p", { class: "card-err", text: "Windows Sandbox isn't turned on here, so tests run in a separate test folder instead. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing. On Windows Pro you can turn on Windows Sandbox in \"Turn Windows features on or off\". Windows Home doesn't have it." })
+        ? await winSandboxBox()
         : el("p", { class: "card-err", text: `Tests on this computer run in a separate test folder, because ${box.reason || "no sandbox is available"}. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing.${box.fix ? ` ${box.fix}` : ""}` })
     return page("Sandbox", "Try a repo nobody has reviewed without risking your files.",
       el("ol", { class: "steps-list" },
@@ -868,6 +868,34 @@ const views = {
           n.url && el("a", { href: n.url, text: n.url }))
       })) : emptyBox("No news yet", "Updates and new apps show up here."))
   },
+}
+
+// ---------- Windows Sandbox: turning it on ----------
+
+// Shown on the Sandbox page while Windows Sandbox is off: what that means, and a
+// button that turns it on (Windows Pro, Enterprise, Education) or why it can't (Home).
+async function winSandboxBox() {
+  const st = await ask("winSandbox").catch(() => ({ canTurnOn: false }))
+  const box = el("div", { class: "card-err win-sandbox" },
+    el("p", { text: "Windows Sandbox isn't turned on here, so tests run in a separate test folder instead. That keeps an app from scattering files, but the app still runs with your permissions and can read your files, including Obstat's own. Only test repos you'd be comfortable installing." }))
+  if (st.on) box.replaceChildren(el("p", { text: "Windows Sandbox is turned on. Restart your PC to start using it." }))
+  else if (st.home) box.append(el("p", { class: "muted", text: "Windows Home doesn't include Windows Sandbox. It comes with Windows Pro, Enterprise and Education." }))
+  else if (st.canTurnOn) {
+    const msg = el("p", { class: "muted", text: "Obstat can turn it on for you. Windows asks for permission once, then your PC needs a restart." })
+    const btn = el("button", { class: "btn small", text: "Turn on Windows Sandbox", onclick: async () => {
+      btn.disabled = true
+      btn.textContent = "Turning it on…"
+      msg.textContent = "Say yes when Windows asks for permission. This can take a few minutes."
+      try {
+        await ask("turnOnWinSandbox")
+        btn.remove()
+        msg.className = "ok-note"
+        msg.textContent = "Windows Sandbox is turned on. Restart your PC, then tests here run inside it. If it won't open after the restart, virtualization may be off in your PC's BIOS settings."
+      } catch (x) { msg.textContent = x.message; btn.disabled = false; btn.textContent = "Try again" }
+    } })
+    box.append(msg, el("div", { class: "row-btns" }, btn))
+  }
+  return box
 }
 
 // ---------- community hub: discussions and launches ----------
@@ -1460,7 +1488,7 @@ async function insightsView() {
           : [el("p", { class: "muted", text: "Installs, updates and sandbox tests show up here." })])),
       el("section", { class: "box health" }, el("div", { class: "box-h" }, el("h2", { text: "System health" })),
         el("div", { class: `h ${listError ? "w" : ""}` }, "Obstat app list", el("span", { text: listError ? "Can't reach it" : "Online" })),
-        el("div", { class: `h ${d.sandbox.mode === "folder" ? "w" : ""}` }, "Sandbox", el("span", { text: d.sandbox.mode === "folder" ? "Test folder only" : "Ready" })),
+        el("div", { class: `h ${d.sandbox.mode === "folder" ? "w" : ""}` }, "Sandbox", d.sandbox.mode === "folder" ? el("a", { href: "#/sandbox", text: "Test folder only · fix" }) : el("span", { text: "Ready" })),
         el("div", { class: `h ${rt.every((r) => r.ready) ? "" : "w"}` }, "Python, Node, git", el("span", { text: rt.every((r) => r.ready) ? "Ready" : "Not downloaded yet" })),
         freeRow,
         el("p", { class: "priv", text: "Kept on this computer, never sent anywhere." }))),
