@@ -1,0 +1,140 @@
+/* Obstat's glass look: frosted panels over a drawn landscape (scene-day.svg, and
+   scene-night.svg at night). Loads after obstat.css and desktop.css and only changes
+   how things look: colours, glass and spacing, never what's on a page.
+   Day or night follows the computer's setting unless Settings picks one
+   (html[data-theme]). Where blur would be slow or isn't wanted (html.lowfx, or
+   "reduce transparency"), the panels turn solid and the blur goes. */
+
+/* ---------- colours ---------- */
+
+/* night (and the default before a theme is known) */
+:root{
+  --panel:rgba(22,20,44,.5); --panel2:rgba(36,33,66,.62); --ink:rgba(11,10,24,.55);
+  --line:rgba(255,255,255,.1); --edge:rgba(255,255,255,.12); --edge-strong:rgba(255,255,255,.24);
+  --text-soft:#c9c5dc; --menu:#bdb9d3; --active-bg:rgba(255,255,255,.1); --active-fg:var(--acc);
+  --shadow:0 10px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);
+  --panel-solid:#171528; --panel2-solid:#211e38;
+  --scrim:rgba(6,5,10,.72);
+  --scene:url(scene-night.svg);
+  --wash:linear-gradient(rgba(10,9,24,.05),rgba(10,9,24,.38));
+  --halo:0 1px 3px rgba(0,0,0,.55);
+}
+/* day */
+:root[data-theme="light"]{
+  --ink:rgba(255,255,255,.75); --panel:rgba(255,255,255,.46); --panel2:rgba(255,255,255,.7);
+  --line:rgba(20,33,58,.11); --edge:rgba(255,255,255,.75); --edge-strong:rgba(91,87,224,.45);
+  --dim:#4a5876; --bone:#14213a; --text-soft:#33415f; --menu:#3c4a68;
+  --acc:#5b57e0; --acc-ink:#fff; --indigo:#4f4bd6; --ok:#25804f; --amber:#b9531b;
+  --active-bg:rgba(255,255,255,.8); --active-fg:#14213a;
+  --shadow:0 10px 30px rgba(30,50,90,.12),inset 0 1px 0 rgba(255,255,255,.6);
+  --panel-solid:#eef3fb; --panel2-solid:#ffffff;
+  --scrim:rgba(20,33,58,.4);
+  --scene:url(scene-day.svg);
+  --wash:linear-gradient(rgba(255,255,255,0) 20%,rgba(238,244,252,.42));
+  --halo:0 0 1px rgba(255,255,255,.9),0 0 14px rgba(255,255,255,.85);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --ink:rgba(255,255,255,.75); --panel:rgba(255,255,255,.46); --panel2:rgba(255,255,255,.7);
+    --line:rgba(20,33,58,.11); --edge:rgba(255,255,255,.75); --edge-strong:rgba(91,87,224,.45);
+    --dim:#4a5876; --bone:#14213a; --text-soft:#33415f; --menu:#3c4a68;
+    --acc:#5b57e0; --acc-ink:#fff; --indigo:#4f4bd6; --ok:#25804f; --amber:#b9531b;
+    --active-bg:rgba(255,255,255,.8); --active-fg:#14213a;
+    --shadow:0 10px 30px rgba(30,50,90,.12),inset 0 1px 0 rgba(255,255,255,.6);
+    --panel-solid:#eef3fb; --panel2-solid:#ffffff;
+    --scrim:rgba(20,33,58,.4);
+    --scene:url(scene-day.svg);
+    --wash:linear-gradient(rgba(255,255,255,0) 20%,rgba(238,244,252,.42));
+    --halo:0 0 1px rgba(255,255,255,.9),0 0 14px rgba(255,255,255,.85);
+    color-scheme:light;
+  }
+}
+/* no blur: solid panels instead (set by app.js, or by the computer's setting) */
+:root.lowfx{--panel:var(--panel-solid);--panel2:var(--panel2-solid)}
+:root.lowfx *{backdrop-filter:none!important}
+@media (prefers-reduced-transparency:reduce){
+  :root{--panel:var(--panel-solid);--panel2:var(--panel2-solid)}
+  *{backdrop-filter:none!important}
+}
+
+/* ---------- the scene and the frame ---------- */
+
+body{background:var(--wash) fixed,var(--scene) center/cover no-repeat fixed,var(--panel-solid);color:var(--bone)}
+/* text that sits straight on the scene gets a soft glow, so it stays readable over the hills */
+.view h1,.view h2,.sub,.group-h,.section-h,.hello,.back,.view-in > p,.how{text-shadow:var(--halo)}
+.top{background:transparent;border-bottom:0}
+.side{background:var(--panel);border:1px solid var(--edge);border-radius:20px;margin:4px 0 16px 14px;box-shadow:var(--shadow);backdrop-filter:blur(22px) saturate(1.4)}
+.brand{color:var(--bone)}
+.tb{color:var(--dim)}
+.tb:hover:not([disabled]){background:var(--panel2);color:var(--bone)}
+.search svg{z-index:1}
+.search input{background:var(--panel2);border-color:var(--edge);backdrop-filter:blur(18px) saturate(1.4);box-shadow:var(--shadow)}
+.online{background:var(--panel);border:1px solid var(--edge);padding:5px 12px;border-radius:999px;backdrop-filter:blur(14px)}
+.menu a{color:var(--menu)}
+.menu a:hover{background:var(--panel2);color:var(--bone)}
+.menu a[aria-current="page"]{color:var(--active-fg);background:var(--active-bg);box-shadow:0 2px 10px rgba(20,30,60,.08)}
+.ver{color:var(--dim)}
+.view{padding:28px 36px 64px}
+
+/* ---------- everything that's a card is glass ---------- */
+
+.quick a,.tile,.feed,.divina,.rows,.about,.changes,.actions-menu,.plan,.chat,.news-item,.skill,
+.tool-grid a,.form-card,.editor,.files,.stats div,.steps-list li,.gate-card,.empty-box,.mini-empty,.run-bar{
+  background:var(--panel);border-color:var(--edge);box-shadow:var(--shadow);backdrop-filter:blur(22px) saturate(1.4)
+}
+.empty-box,.mini-empty{border-style:solid}
+.gate-card{background:var(--panel2-solid)}
+.plan{border-color:var(--acc)}
+.divina{border-color:rgba(217,180,106,.55)}
+.quick a:hover,.tile:hover,.tool-grid a:hover{border-color:var(--edge-strong);background:var(--panel2)}
+.feed a:hover{background:var(--panel2)}
+.row:hover{background:var(--panel2)}
+.term{box-shadow:var(--shadow)}
+
+/* text that was a fixed light grey */
+.row p,.feed p,.news-item p,.skill p,.chips button,.signin p,.check,.gate-card p,.gate-card li,.msg p{color:var(--text-soft)}
+.cmds code,.skill-src,.editor textarea{color:var(--bone)}
+.actions-menu .menu-h{color:var(--dim)}
+.msg{border-bottom-color:var(--line)}
+.gate{background:var(--scrim)}
+.stage{background:var(--panel)}
+
+/* ---------- headings and Home ---------- */
+
+.view h1{font-size:32px;letter-spacing:-.02em}
+.hello h1{font-size:42px;margin-bottom:6px}
+.sub{color:var(--dim)}
+.quick{gap:16px}
+.quick a{padding:20px;border-radius:20px;flex-direction:column;gap:12px}
+.quick b{font-size:16.5px}
+/* the quick-action icons: coloured tiles with white icons, in day and night alike */
+.ico{background:linear-gradient(160deg,#5b9dff,#2f6fe0);color:#fff;box-shadow:0 6px 14px rgba(47,111,224,.3)}
+.ico.indigo{background:linear-gradient(160deg,#8b86ff,#5b57e0);color:#fff;box-shadow:0 6px 14px rgba(91,87,224,.3)}
+.ico.green{background:linear-gradient(160deg,#4fd08b,#26995c);color:#fff;box-shadow:0 6px 14px rgba(38,153,92,.3)}
+.tile,.feed,.divina{border-radius:20px}
+
+/* buttons: the main one stands out on glass */
+.btn{box-shadow:0 6px 16px rgba(20,20,60,.18)}
+.btn.ghost{background:var(--panel);border-color:var(--edge);box-shadow:none;backdrop-filter:blur(14px)}
+.chan-tabs a{background:var(--panel);border-color:var(--edge);backdrop-filter:blur(14px)}
+.chan-tabs a[aria-selected="true"]{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+input,select,.composer textarea,.composer input,.form-card textarea{background:var(--ink);border-color:var(--edge);color:var(--bone)}
+
+/* ---------- the apps running now, under the menu ---------- */
+
+.running-box{margin:10px 2px 6px;padding:12px 14px;border-radius:14px;background:var(--panel2);border:1px solid var(--edge)}
+.running-box[hidden]{display:none}
+.running-box b{display:block;font-size:13px;margin-bottom:6px;color:var(--bone)}
+.running-box a{display:flex;align-items:center;gap:8px;margin:4px 0 0;font-size:13px;color:var(--text-soft);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.running-box a::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.running-box a:hover{color:var(--bone)}
+
+/* ---------- appearance choice in Settings ---------- */
+
+.seg{display:inline-flex;gap:2px;padding:3px;border-radius:11px;background:var(--panel2);border:1px solid var(--edge)}
+.seg button{all:unset;cursor:pointer;padding:6px 12px;border-radius:8px;font:500 13px var(--ui);color:var(--dim)}
+.seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-ink)}
+.seg button:focus-visible{outline:2px solid var(--indigo)}
+
+@media (prefers-reduced-motion:reduce){.quick a,.tile{transition:none}}

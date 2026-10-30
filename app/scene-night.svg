@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+<!-- Obstat's background: drawn by hand, no photos. Sky, stars, hills and a lake. -->
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1030"/><stop offset=".45" stop-color="#1f2455"/><stop offset=".62" stop-color="#3b3570"/><stop offset=".7" stop-color="#4a3f78"/></linearGradient>
+<radialGradient id="sun" cx="1050" cy="560" r="420" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#d9b46a" stop-opacity=".35"/><stop offset=".25" stop-color="#8f8cf5" stop-opacity=".18"/><stop offset="1" stop-color="#8f8cf5" stop-opacity="0"/></radialGradient>
+<linearGradient id="h1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a3366"/><stop offset="1" stop-color="#323b72"/></linearGradient><linearGradient id="h2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d2a4a"/><stop offset="1" stop-color="#22314f"/></linearGradient><linearGradient id="h3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#15233a"/><stop offset="1" stop-color="#1a2a40"/></linearGradient><linearGradient id="lake" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3f7a"/><stop offset="1" stop-color="#1b2350"/></linearGradient><linearGradient id="h4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f1a2c"/><stop offset="1" stop-color="#0c1524"/></linearGradient>
+<filter id="soft"><feGaussianBlur stdDeviation="1.2"/></filter>
+</defs>
+<rect width="1440" height="900" fill="url(#sky)"/>
+<rect width="1440" height="900" fill="url(#sun)"/>
+<g fill="#fff" opacity=".9"><circle cx="120" cy="60" r="1.4"/><circle cx="260" cy="180" r="1"/><circle cx="420" cy="90" r="1.6"/><circle cx="610" cy="40" r="1.1"/><circle cx="780" cy="140" r="1.3"/><circle cx="930" cy="70" r="1.8"/><circle cx="1110" cy="190" r="1"/><circle cx="1250" cy="60" r="1.4"/><circle cx="1380" cy="130" r="1.2"/><circle cx="700" cy="250" r="1"/><circle cx="350" cy="300" r="1.2"/><circle cx="1180" cy="320" r="1"/><circle cx="60" cy="240" r="1"/><circle cx="520" cy="200" r="0.9"/><circle cx="1000" cy="260" r="1.1"/></g><g fill="#fff" opacity=".06" filter="url(#soft)"><ellipse cx="300" cy="150" rx="160" ry="26"/><ellipse cx="380" cy="135" rx="90" ry="24"/><ellipse cx="980" cy="110" rx="190" ry="24"/><ellipse cx="1080" cy="95" rx="100" ry="22"/><ellipse cx="1300" cy="230" rx="140" ry="18"/></g>
+<path d="M0 560 C180 500 320 520 470 540 C640 565 760 500 920 510 C1080 520 1240 470 1440 500 L1440 900 L0 900Z" fill="url(#h1)" opacity=".85"/>
+<path d="M0 610 C200 570 380 600 560 590 C760 578 880 560 1060 585 C1220 607 1330 575 1440 585 L1440 900 L0 900Z" fill="url(#h2)"/>
+<path d="M0 680 C160 640 320 650 460 668 C620 690 700 650 860 652 C900 660 930 668 960 676 L960 900 L0 900Z" fill="url(#h3)"/>
+<path d="M760 676 C900 662 1100 664 1440 672 L1440 900 L760 900Z" fill="url(#lake)"/>
+<g stroke="#d9b46a" stroke-width="2" opacity=".35" stroke-linecap="round"><path d="M980 720h120"/><path d="M1150 760h170"/><path d="M1030 800h90"/><path d="M1220 690h80"/></g>
+<path d="M0 760 C140 720 300 730 430 750 C560 770 660 768 760 790 C840 808 900 850 960 900 L0 900Z" fill="url(#h4)"/>
+</svg>

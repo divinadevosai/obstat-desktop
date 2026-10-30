@@ -43,6 +43,36 @@ const forget = (what) => kept.delete(what)
 const go = (hash) => { location.hash = hash }
 const appHash = (e) => `#/app/${encodeURIComponent(e.owner)}/${encodeURIComponent(e.name)}`
 const runHash = (id) => `#/run/${encodeURIComponent(id)}`
+
+// ---------- appearance: day or night, glass or solid panels (app/glass.css) ----------
+
+const THEMES = { system: "Match computer", light: "Day", dark: "Night" }
+function themePref() { try { const t = localStorage.getItem("obstat-theme"); return Object.hasOwn(THEMES, t) ? t : "system" } catch { return "system" } }
+function applyTheme(t = themePref()) {
+  if (t === "system") delete document.documentElement.dataset.theme
+  else document.documentElement.dataset.theme = t
+}
+// The glass blur is drawn by the graphics card. Without one (Chromium drawing in
+// software, as on many virtual machines and some Linux PCs) the panels go solid instead.
+function softwareGraphics() {
+  try {
+    const gl = document.createElement("canvas").getContext("webgl")
+    if (!gl) return true
+    const info = gl.getExtension("WEBGL_debug_renderer_info")
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER)))
+  } catch { return true }
+}
+function themeChoice() {
+  const box = el("div", { class: "seg", role: "group", "aria-label": "Appearance" })
+  const draw = () => box.replaceChildren(...Object.entries(THEMES).map(([t, label]) => el("button", { type: "button", text: label, "aria-pressed": String(themePref() === t), onclick: () => {
+    try { localStorage.setItem("obstat-theme", t) } catch {}
+    applyTheme(t); draw()
+  } })))
+  draw()
+  return box
+}
+applyTheme()
+document.documentElement.classList.toggle("lowfx", softwareGraphics())
 const stars = (n) => `★ ${(n || 0).toLocaleString("en-GB")}`
 const day = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
 // "3 days ago", "2 months ago"
@@ -707,7 +737,8 @@ const views = {
     el("dl", { class: "rows" },
       el("div", {}, el("dt", {}, "Version", el("small", { text: "Obstat updates itself. New versions download in the background." })), el("dd", {}, info.version, " ", updateLine())),
       el("div", {}, el("dt", { text: "Home folder" }), el("dd", {}, info.home, " ", el("button", { class: "link", text: "View folder", onclick: () => ask("openFolder", "home") }))),
-      el("div", {}, el("dt", { text: "App list" }), el("dd", { text: "obstat.app" }))),
+      el("div", {}, el("dt", { text: "App list" }), el("dd", { text: "obstat.app" })),
+      el("div", {}, el("dt", {}, "Appearance", el("small", { text: "Day, night, or whatever your computer is set to." })), el("dd", {}, themeChoice()))),
     el("h2", { class: "group-h", text: "Troubleshoot" }),
     el("dl", { class: "rows" },
       el("div", {}, el("dt", {}, "Downloads cache", el("small", { text: "Files Obstat downloaded while installing. Safe to empty." })),
@@ -1399,7 +1430,19 @@ function appendLog(id, text) {
   if (stick) logBody.scrollTop = logBody.scrollHeight
 }
 
+// ---------- the apps running now, under the menu ----------
+
+let runningTimer
+function showRunningSoon() { clearTimeout(runningTimer); runningTimer = setTimeout(showRunning, 250) }
+async function showRunning() {
+  const on = (await ask("apps").catch(() => [])).filter((a) => a.running)
+  $("running").hidden = !on.length
+  $("running-h").textContent = on.length === 1 ? "1 app running" : `${on.length} apps running`
+  $("running-l").replaceChildren(...on.slice(0, 5).map((a) => el("a", { href: appHash(a), text: a.name, title: a.name })))
+}
+
 window.obstat.onEvent((ev) => {
+  if (ev.type === "state") showRunningSoon()
   if (ev.type === "open-app" && typeof ev.id === "string") go(`#/app/${ev.id.split("/").map(encodeURIComponent).join("/")}`)
   else if (ev.type === "log") appendLog(ev.id, ev.text)
   else if (ev.type === "progress") {
@@ -1576,6 +1619,7 @@ info = await ask("info")
 $("ver").textContent = `v${info.version}`
 await loadList()
 render()
+showRunning()
 termsGate()
 ask("updateState").then(showUpdate).catch(() => {})
 checkNews()
