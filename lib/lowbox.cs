@@ -25,7 +25,7 @@ static class LowBox {
   const int TokenIntegrityLevel = 25, SE_GROUP_INTEGRITY = 0x20, SecurityImpersonation = 2, TokenPrimary = 1;
   const int CREATE_SUSPENDED = 4, CREATE_UNICODE_ENVIRONMENT = 0x400;
   const int JobObjectExtendedLimitInformation = 9, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
-  const int SE_FILE_OBJECT = 1, LABEL_SECURITY_INFORMATION = 0x10, PROTECTED_SACL_SECURITY_INFORMATION = 0x40000000;
+  const int SE_FILE_OBJECT = 1, LABEL_SECURITY_INFORMATION = 0x10;
   const uint INFINITE = 0xFFFFFFFF;
 
   [StructLayout(LayoutKind.Sequential)] struct SID_AND_ATTRIBUTES { public IntPtr Sid; public int Attributes; }
@@ -110,14 +110,16 @@ static class LowBox {
     var program = new string[argv.Length - i - 1];
     Array.Copy(argv, i + 1, program, 0, program.Length);
     // secrets first, then the folders the install may write
-    foreach (var p in hide) Label(p, Directory.Exists(p) ? "S:(ML;OICI;NWNR;;;ME)" : "S:(ML;;NWNR;;;ME)", false);
-    foreach (var p in low) if (Directory.Exists(p)) Label(p, "S:PAI(ML;OICI;NW;;;LW)", true);
+    foreach (var p in hide) Label(p, Directory.Exists(p) ? "(ML;OICI;NWNR;;;ME)" : "(ML;;NWNR;;;ME)");
+    foreach (var p in low) if (Directory.Exists(p)) Label(p, "(ML;OICI;NW;;;LW)");
     return Launch(cwd, program);
   }
 
-  // Sets a folder's or file's integrity label, and (for a folder) everything in it, unless
-  // it already has that label. Done once: later files inherit it.
-  static void Label(string p, string sddl, bool isProtected) {
+  // Sets a folder's or file's integrity label (one label ACE, as SDDL), and for a folder
+  // everything in it, unless it already has that label of its own. Done once: later files
+  // inherit it. (Not "protected": that needs a privilege only administrators have.)
+  static void Label(string p, string ace) {
+    string sddl = "S:" + ace;
     if (!File.Exists(p) && !Directory.Exists(p)) return;
     IntPtr current;
     if (GetNamedSecurityInfoW(p, SE_FILE_OBJECT, LABEL_SECURITY_INFORMATION, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, out current) == 0) {
@@ -125,7 +127,7 @@ static class LowBox {
       if (ConvertSecurityDescriptorToStringSecurityDescriptorW(current, 1, LABEL_SECURITY_INFORMATION, out str, IntPtr.Zero)) {
         string have = Marshal.PtrToStringUni(str);
         LocalFree(str);
-        if (have == sddl) { LocalFree(current); return; }
+        if (have != null && have.Contains(ace)) { LocalFree(current); return; }
       }
       LocalFree(current);
     }
@@ -133,7 +135,7 @@ static class LowBox {
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, out sd, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error(), "bad label");
     bool present, defaulted; IntPtr sacl;
     if (!GetSecurityDescriptorSacl(sd, out present, out sacl, out defaulted)) throw new Win32Exception(Marshal.GetLastWin32Error());
-    int err = SetNamedSecurityInfoW(p, SE_FILE_OBJECT, LABEL_SECURITY_INFORMATION | (isProtected ? PROTECTED_SACL_SECURITY_INFORMATION : 0), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, sacl);
+    int err = SetNamedSecurityInfoW(p, SE_FILE_OBJECT, LABEL_SECURITY_INFORMATION, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, sacl);
     LocalFree(sd);
     if (err != 0) throw new Win32Exception(err, "couldn't label " + p);
   }
