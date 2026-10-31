@@ -43,17 +43,19 @@ test("inside a real AppContainer the worker installs into its own folder, talks 
     const found = await appbox.detect({ cacheDir: cache, readable: [path.dirname(process.execPath), path.join(__dirname, "..", "lib")] })
     assert.equal(found.kind, "appcontainer", found.reason)
     const node = process.execPath
-    const steal = (f, out) => `(type "${f}" >nul 2>&1 && echo yes || echo no) > ${out}`
+    const steal = (f, out) => `(type "${f}" > ${out}.tmp 2>&1 && echo yes || echo no) > ${out}`
     fs.writeFileSync(path.join(app, "install.js"), `module.exports = { run: [{ method: "shell.run", params: { message: [
       ${JSON.stringify(steal(secret, "secret.result"))},
       ${JSON.stringify(steal(path.join(other, "data.txt"), "other.result"))},
-      ${JSON.stringify(`(echo x > "${path.join(top, "escaped.txt")}" 2>nul && echo yes || echo no) > escape.result`)},
+      ${JSON.stringify(`(echo x > "${path.join(top, "escaped.txt")}" 2> escape.err && echo yes || echo no) > escape.result`)},
+      "(echo probe > nul && echo yes || echo no) > nul.result",
       "echo inside > done.txt",
     ] } }] }`)
     const w = appbox.wrap(found, { name: appbox.containerName(`test/${path.basename(top)}`), own: [app, ihome], readable: [path.dirname(node), path.join(__dirname, "..", "lib")], cwd: ihome }, node, [WORKER])
     const { spawn } = require("node:child_process")
     const env = { ...require("../lib/confine").sandboxEnv(process.env), ELECTRON_RUN_AS_NODE: "1", HOME: ihome, USERPROFILE: ihome, TEMP: ihome, TMP: ihome, APPDATA: ihome, LOCALAPPDATA: ihome }
-    const child = spawn(w.file, w.args, { env, cwd: ihome, stdio: ["ignore", "ignore", "pipe", "ipc"], windowsHide: true })
+    const child = spawn(w.file, w.args, { env, cwd: ihome, stdio: ["pipe", "pipe", "pipe", "ipc"], windowsHide: true })
+    child.stdin.end(); child.stdout.resume()
     let err = ""
     child.stderr.on("data", (d) => { err += d })
     const out = await new Promise((resolve) => {
@@ -66,6 +68,8 @@ test("inside a real AppContainer the worker installs into its own folder, talks 
     assert.equal(out.end, "done", `${out.log}\n${out.error}\n${err}`)
     const said = (f) => fs.readFileSync(path.join(app, f), "utf8").trim()
     assert.equal(said("done.txt"), "inside")
+    // scripts write to nul all the time ("> nul 2>&1"): it has to work inside
+    assert.equal(said("nul.result"), "yes", "couldn't write to nul")
     assert.equal(said("secret.result"), "no", "read a file in your home folder")
     assert.equal(said("other.result"), "no", "read another app's folder")
     assert.equal(said("escape.result"), "no", "wrote outside its folders")
