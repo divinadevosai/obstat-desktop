@@ -34,7 +34,7 @@ const runtimes = runtimesLib.create(home, { fetchImpl: (url) => net.fetch(url), 
 const toWindow = (e) => { if (win && !win.isDestroyed()) win.webContents.send("obstat:event", e) }
 const lastOpen = new Map() // app id -> the address its start script asked to open
 const usage = usageLib.create(home)
-// installs (install.js, update.js, reset.js) run inside the OS sandbox on Mac and Linux (lib/walls.js)
+// installs (install.js, update.js, reset.js) run inside the OS sandbox: bubblewrap, Apple's sandbox, or an AppContainer on Windows (lib/walls.js)
 const walls = wallsLib.create(home, { appDir: (id) => apps.appDir(id) })
 const apps = appsLib.create(home, runtimes, {
   onRun: (r) => { usage.record(r); walls.done(r.id) },

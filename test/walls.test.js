@@ -47,10 +47,29 @@ test("only install, update and reset are walled, and only where there are walls"
   assert.equal(proxies.length, 1)
   assert.ok(proxies[0].closed, "the install's network closes when it ends")
 
-  // Windows: never (Windows Sandbox is a separate copy of Windows)
-  const win = wallsLib.create(h, { appDir, platform: "win32", detect: async () => ({ kind: "bwrap" }) })
+  // Windows: an AppContainer of the app's own, when it starts there
+  const winNone = wallsLib.create(h, { appDir, platform: "win32", detect: async () => ({ kind: null, reason: "no csc" }), mkdir: () => {} })
+  await winNone.ready
+  assert.equal(winNone.wrap("a/b", "C:\\obstat\\obstat.exe", ["w.js"], {}, "install.js"), null)
+  const win = wallsLib.create(h, { appDir, platform: "win32", homeDir: "C:\\Users\\u", localAppData: "C:\\Users\\u\\AppData\\Local", detect: async () => ({ kind: "appcontainer", file: "C:\\cache\\appbox.exe" }), mkdir: () => {} })
   await win.ready
-  assert.equal(win.wrap("a/b", "/node", ["w.js"], {}, "install.js"), null)
+  const ww = win.wrap("a/b", "C:\\obstat\\obstat.exe", ["C:\\obstat\\worker.js"], {}, "install.js")
+  assert.equal(ww.kind, "appcontainer")
+  assert.equal(ww.file, "C:\\cache\\appbox.exe")
+  const wa = ww.args
+  const after = (flag) => wa.flatMap((a, i) => (a === flag ? [wa[i + 1]] : []))
+  assert.equal(wa[0], "run")
+  assert.match(after("--name")[0], /^obstat\.install\.[0-9a-f]{24}$/)
+  assert.notEqual(after("--name")[0], win.wrap("a/c", "x", [], {}, "install.js").args[2], "each app has its own container")
+  assert.ok(after("--rw").includes(appDir("a/b")), "its own folder")
+  assert.ok(after("--shared-rw").includes("C:\\Users\\u\\AppData\\Local\\uv\\cache"), "the shared caches where Windows tools keep them")
+  assert.ok(!after("--rw").concat(after("--shared-rw")).includes("C:\\Users\\u"), "not the home folder")
+  assert.deepEqual(wa.slice(wa.indexOf("--") + 1), ["C:\\obstat\\obstat.exe", "--preserve-symlinks", "--preserve-symlinks-main", "C:\\obstat\\worker.js"])
+  assert.equal(win.wrap("a/b", "x", [], {}, "start.js"), null, "starting the app isn't walled")
+  assert.deepEqual(win.jobExtra("a/b", "install.js"), {}, "inside the walls npm runs as usual")
+  const wenv = win.env("a/b", "install.js")
+  assert.equal(wenv.UV_CACHE_DIR, "C:\\Users\\u\\AppData\\Local\\uv\\cache")
+  assert.ok(wenv.USERPROFILE.includes("install-home"))
 })
 
 test("the shared caches are where each tool keeps them by default", () => {
@@ -147,7 +166,7 @@ test("a reviewed app's install runs walled: no home folder, no keys, no other se
 
 test("where installs can't be walled, npm skips dependencies' scripts and secrets stay out", async () => {
   const h = fakeHome()
-  const win = wallsLib.create(h, { appDir: (id) => path.join(h.root, "apps", id), platform: "win32" })
+  const win = wallsLib.create(h, { appDir: (id) => path.join(h.root, "apps", id), platform: "win32", detect: async () => ({ kind: null, reason: "it didn't start" }) })
   await win.ready
   assert.deepEqual(win.jobExtra("a/b", "install.js"), { npmSafe: true })
   assert.deepEqual(win.jobExtra("a/b", "update.js"), { npmSafe: true })
