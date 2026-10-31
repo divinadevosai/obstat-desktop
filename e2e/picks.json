@@ -11,89 +11,139 @@
     "id": "divinadevosai/socialcleanup",
     "sha": "45b0fa5e5fb91370ee0383c160e7fb8f513e15dd",
     "scripts": {
-      "install.js": "module.exports = {\n  run: [\n    { method: \"shell.run\", params: { message: [\"echo Social Cleanup is downloaded. Press Start to add it to your browser.\"] } },\n  ],\n}\n",
-      "start.js": "module.exports = {\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        message: [\n          \"echo Social Cleanup is a browser extension. To add it to Edge or Chrome:\",\n          \"echo 1. On the extensions page, turn on Developer mode.\",\n          \"echo 2. Click Load unpacked and choose the folder that just opened.\",\n          \"echo 3. Pin Social Cleanup from the puzzle-piece button in the toolbar.\",\n        ],\n      },\n    },\n    { method: \"shell.run\", when: \"{{platform === 'win32'}}\", params: { message: [\"start \\\"\\\" .\", \"start msedge edge://extensions/\"] } },\n  ],\n}\n"
+      "install.js": "module.exports = {\n  run: [\n    { method: \"notify\", params: { title: \"Social Cleanup is downloaded. Press Start to add it to your browser.\" } },\n  ],\n}\n",
+      "start.js": "module.exports = {\n  run: [\n    {\n      method: \"notify\",\n      params: {\n        title: \"Social Cleanup is a browser extension, so it runs in Edge or Chrome, not inside Obstat. To add it:\",\n        description: \"\\n1. On the extensions page that just opened, turn on Developer mode.\\n2. Click Load unpacked and choose the folder that just opened.\\n3. Pin Social Cleanup from the puzzle-piece button in the toolbar.\",\n      },\n    },\n    { method: \"shell.run\", when: \"{{platform === 'win32'}}\", params: { message: [\"start \\\"\\\" .\", \"start msedge edge://extensions/\"] } },\n  ],\n}\n"
     }
   },
   {
     "id": "pinokiofactory/z-image-turbo",
-    "sha": "54899fdb5c023072de43c8b91ad2b0f0bee5b5c4"
+    "sha": "54899fdb5c023072de43c8b91ad2b0f0bee5b5c4",
+    "clones": {}
   },
   {
     "id": "pinokiofactory/applio",
-    "sha": "ac636072eff0d3bab671531ef66b05c82e6947ee"
+    "sha": "ac636072eff0d3bab671531ef66b05c82e6947ee",
+    "clones": {
+      "https://github.com/IAHispano/Applio": "5171e1dcf31a33d1afeb14ef7c6aac6dadae5dc1"
+    }
   },
   {
     "id": "pinokiofactory/whisper-webui",
-    "sha": "2236c90e81ec9b1ac7f5f21a06cbe301494507fa"
+    "sha": "2236c90e81ec9b1ac7f5f21a06cbe301494507fa",
+    "clones": {
+      "https://github.com/jhj0517/Whisper-WebUI": "c3bb3b18e959826b28b1192486a8d5b361b6a4e0"
+    }
   },
   {
     "id": "pinokiofactory/kokoro-tts",
-    "sha": "491a369bdca03b320586bd230f1c819562c03558"
+    "sha": "491a369bdca03b320586bd230f1c819562c03558",
+    "clones": {}
   },
   {
     "id": "pinokiofactory/e2-f5-tts",
-    "sha": "8a1392b1785a275bffdf6cbcb1d2c4b0396e466f"
+    "sha": "8a1392b1785a275bffdf6cbcb1d2c4b0396e466f",
+    "clones": {
+      "https://github.com/SWivid/F5-TTS": "2f866649b779881af8bd644e76b9a6d95053da29"
+    }
   },
   {
     "id": "pinokiofactory/dia",
-    "sha": "17e1912e77363efc198d52a5ae813caaa8d3da90"
+    "sha": "17e1912e77363efc198d52a5ae813caaa8d3da90",
+    "clones": {
+      "https://github.com/nari-labs/dia": "876125e461a03b157ec905b0fe8b57a0f8b9e7a0"
+    }
   },
   {
     "id": "pinokiofactory/ace-step",
-    "sha": "8cf2fac2765b1383e6d078b399acc3e38374949e"
+    "sha": "8cf2fac2765b1383e6d078b399acc3e38374949e",
+    "clones": {
+      "https://github.com/ace-step/ACE-Step": "1bee4c9f5b43e30995f8d4d33b3919197ce1bd68"
+    }
   },
   {
     "id": "pinokiofactory/flux-webui",
-    "sha": "62d2f5692da1e0aaf776c3dceef0a720a6a24bb6"
+    "sha": "62d2f5692da1e0aaf776c3dceef0a720a6a24bb6",
+    "clones": {}
   },
   {
     "id": "pinokiofactory/invoke",
-    "sha": "67ac5a161a265badb1ff73d46c41f762c16bff35"
+    "sha": "67ac5a161a265badb1ff73d46c41f762c16bff35",
+    "clones": {}
   },
   {
     "id": "pinokiofactory/OmniGen",
-    "sha": "07de8c2c3944d3852bcab55d2f2c4d74bd245532"
+    "sha": "07de8c2c3944d3852bcab55d2f2c4d74bd245532",
+    "clones": {
+      "https://github.com/cocktailpeanut/OmniGen": "d94998d73bd0f50e5c97a786b5fc48c0fc87bfdf"
+    }
   },
   {
     "id": "pinokiofactory/cogvideo",
-    "sha": "9e2a18626426cbeb7e84be537d98e9082de8fe97"
+    "sha": "9e2a18626426cbeb7e84be537d98e9082de8fe97",
+    "clones": {
+      "https://github.com/peanutcocktail/CogVideo": "acaef76f4bb7f4daf569641355cdb0b8bef21bef"
+    }
   },
   {
     "id": "pinokiofactory/diffusers-image-fill",
-    "sha": "a8b6497483d956df7ca1ffc882bf29af03476a26"
+    "sha": "a8b6497483d956df7ca1ffc882bf29af03476a26",
+    "clones": {}
   },
   {
     "id": "pinokiofactory/clarity-refiners-ui",
-    "sha": "a632fb6b948fa6b1a55d816982655d6dc8ed995e"
+    "sha": "a632fb6b948fa6b1a55d816982655d6dc8ed995e",
+    "clones": {}
   },
   {
     "id": "pinokiofactory/pyramidflow",
-    "sha": "6ae7e61806478b430473c2a6ce9866525e3cd1a2"
+    "sha": "6ae7e61806478b430473c2a6ce9866525e3cd1a2",
+    "clones": {
+      "https://github.com/jy0205/Pyramid-Flow": "a012faa1dc4d71301a7a153c7f9554c081947ea2",
+      "https://github.com/betapeanut/Pyramid-Flow": "796f007fd85cf98a99264bae8a4610424737ba78"
+    }
   },
   {
     "id": "pinokiofactory/RMBG-2-Studio",
-    "sha": "a2c3a0d0f1618c74c115d3221eb665bab5e8df10"
+    "sha": "a2c3a0d0f1618c74c115d3221eb665bab5e8df10",
+    "clones": {}
   },
   {
     "id": "pinokiofactory/Allegro-txt2vid-install",
-    "sha": "6000ff1e395f6238eaa89e68b45a571e84d324e1"
+    "sha": "6000ff1e395f6238eaa89e68b45a571e84d324e1",
+    "clones": {
+      "https://github.com/pinokiofactory/Allegro-txt2vid": "f8327e3172834ee8d932d7284641a5e9a0065cbc"
+    }
   },
   {
     "id": "pinokiofactory/audiocraft_plus",
-    "sha": "a8e0d2731e8dbb7185a4a0ffd53b495d003586ab"
+    "sha": "a8e0d2731e8dbb7185a4a0ffd53b495d003586ab",
+    "clones": {
+      "https://github.com/GrandaddyShmax/audiocraft_plus": {
+        "HEAD": "c9ff851e7b509d3b6dd735aaefe438823319674e",
+        "mac-os-fix": "882222df1d7aed91e24958839f8700c9a2731f23"
+      }
+    }
   },
   {
     "id": "pinokiofactory/MMAudio",
-    "sha": "301b075421ae40d86dded8f5c36c64f65af89bfb"
+    "sha": "301b075421ae40d86dded8f5c36c64f65af89bfb",
+    "clones": {
+      "https://github.com/hkchengrex/MMAudio": "974010a026c731054592d8f777218bd9d85a6c24"
+    }
   },
   {
     "id": "pinokiofactory/cogstudio",
-    "sha": "7dfb014a636513c5b42de070c43e285c9bf7cce7"
+    "sha": "7dfb014a636513c5b42de070c43e285c9bf7cce7",
+    "clones": {
+      "https://github.com/THUDM/CogVideo": "7a1af7154511e0ce4e4be8d62faa8c5e5a3532d2"
+    }
   },
   {
     "id": "pinokiofactory/llamafactory",
-    "sha": "e299b25b26f48bb6ef96a670c2da402f0e328441"
+    "sha": "e299b25b26f48bb6ef96a670c2da402f0e328441",
+    "clones": {
+      "https://github.com/hiyouga/LLaMA-Factory": "438b3611d1538547876c9e7af044b022dc0e53f2"
+    }
   },
   {
     "id": "NousResearch/hermes-agent",
