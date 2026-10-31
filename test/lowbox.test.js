@@ -23,6 +23,7 @@ test("at low integrity the worker installs into its own folder and the caches, c
   fs.writeFileSync(keys, '{"OPENAI_API_KEY":"sk-secret"}')
   const other = path.join(top, "apps", "other")
   fs.mkdirSync(other); fs.writeFileSync(path.join(other, "data.txt"), "other app")
+  let child = null
   try {
     const found = await lowbox.detect({ cacheDir: cache })
     assert.equal(found.kind, "lowbox", found.reason)
@@ -39,7 +40,7 @@ test("at low integrity the worker installs into its own folder and the caches, c
     ] } }] }`)
     const w = lowbox.wrap(found, { low: [app, ihome, shared], hide: [keys], cwd: ihome }, process.execPath, [WORKER])
     const env = { ...require("../lib/confine").sandboxEnv(process.env), ELECTRON_RUN_AS_NODE: "1", HOME: ihome, USERPROFILE: ihome, TEMP: ihome, TMP: ihome, APPDATA: ihome, LOCALAPPDATA: ihome }
-    const child = spawn(w.file, w.args, { env, cwd: ihome, stdio: ["ignore", "ignore", "pipe", "ipc"], windowsHide: true })
+    child = spawn(w.file, w.args, { env, cwd: ihome, stdio: ["ignore", "ignore", "pipe", "ipc"], windowsHide: true })
     let err = ""
     child.stderr.on("data", (d) => { err += d })
     const out = await new Promise((resolve) => {
@@ -61,7 +62,9 @@ test("at low integrity the worker installs into its own folder and the caches, c
     assert.equal(said("home.result"), "no", "wrote in the home folder")
     assert.equal(fs.existsSync(path.join(top, "escaped.txt")), false)
   } finally {
+    // the worker runs in the install home: let it end before its folders go
+    if (child && child.exitCode === null) await new Promise((r) => { child.once("exit", r); setTimeout(r, 10000) })
     fs.rmSync(path.join(os.homedir(), `.obstat-lowbox-escaped-${path.basename(top)}`), { force: true })
-    fs.rmSync(top, { recursive: true, force: true })
+    fs.rmSync(top, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
   }
 })
