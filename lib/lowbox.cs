@@ -120,7 +120,7 @@ static class LowBox {
     var started = DateTime.UtcNow;
     int n = 0;
     foreach (var p in reset) n += Reset(p);
-    if (n > 0) Console.Error.WriteLine("(Obstat's Windows install walls: " + n + " files and folders the install made are ordinary again, in " + (int)(DateTime.UtcNow - started).TotalSeconds + "s.)");
+    if (reset.Count > 0) Console.Error.WriteLine("(Obstat's Windows install walls: the app's folders are ordinary again (" + n + " with a label of their own), in " + (int)(DateTime.UtcNow - started).TotalSeconds + "s.)");
     return code;
   }
 
