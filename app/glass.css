@@ -264,3 +264,8 @@ a.post:hover{border-color:var(--acc)}
 .health .h a{margin-left:auto;font-size:12.5px;font-weight:600;color:#b07a10}
 .win-sandbox p{margin:0 0 8px}
 .win-sandbox .row-btns{margin-top:4px}
+
+/* Fully pinned (every installed package locked and hash-checked) */
+.badge.pinned{color:#4a46c9;background:rgba(91,87,224,.12);border-color:rgba(91,87,224,.25);text-decoration:none}
+:root:not([data-theme="light"]) .badge.pinned{color:#b9b6ff}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .badge.pinned{color:#4a46c9}}

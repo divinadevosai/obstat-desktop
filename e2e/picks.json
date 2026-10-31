@@ -3,7 +3,7 @@
     "id": "divinadevosai/plazai",
     "sha": "ac3dae6d442665ae77d8e6c5b95267f99e86b2dc",
     "scripts": {
-      "install.js": "module.exports = {\n  run: [\n    { method: \"shell.run\", params: { message: [\"npm install\"] } },\n  ],\n}\n",
+      "install.js": "module.exports = {\n  run: [\n    // npm ci: exactly the versions in package-lock.json, each checked against its integrity hash\n    { method: \"shell.run\", params: { message: [\"npm ci --no-audit --no-fund\"] } },\n  ],\n}\n",
       "start.js": "module.exports = {\n  daemon: true,\n  run: [\n    {\n      method: \"shell.run\",\n      params: {\n        env: { NO_COLOR: \"1\", FORCE_COLOR: \"0\" },\n        message: [\"npm run dev\"],\n        on: [{ event: \"/(http:\\\\/\\\\/127\\\\.0\\\\.0\\\\.1:[0-9]+)/\", done: true }],\n      },\n    },\n    { method: \"local.set\", params: { url: \"{{input.event[1]}}\" } },\n  ],\n}\n"
     }
   },
