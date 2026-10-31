@@ -41,6 +41,15 @@ jobs:
       - name: Check the self-updater's files were made
         shell: bash
         run: ls dist/latest.yml dist/Obstat-Setup-*.exe dist/Obstat-Setup-*.exe.blockmap
+      # a pull request's installer, to try a change on a real PC before it's merged
+      # (kept a week, only for people with access to this repository's Actions)
+      - name: Keep the pull request's installer for testing
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/Obstat-Setup-*.exe
+          retention-days: 7
       - name: Publish the installer to the desktop-preview release
         # only merged code reaches people: pull requests build and test, but don't publish
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
