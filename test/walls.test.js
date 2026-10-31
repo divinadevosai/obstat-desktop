@@ -47,10 +47,36 @@ test("only install, update and reset are walled, and only where there are walls"
   assert.equal(proxies.length, 1)
   assert.ok(proxies[0].closed, "the install's network closes when it ends")
 
-  // Windows: never (Windows Sandbox is a separate copy of Windows)
-  const win = wallsLib.create(h, { appDir, platform: "win32", detect: async () => ({ kind: "bwrap" }) })
+  // Windows: in Windows Sandbox, where it's turned on
+  const winNone = wallsLib.create(h, { appDir, platform: "win32", detect: async () => wallsLib.windowsSandbox({ exists: () => false }), mkdir: () => {} })
+  await winNone.ready
+  assert.equal(winNone.wrap("a/b", "C:\\o\\Obstat.exe", ["w.js"], {}, "install.js"), null)
+  assert.deepEqual(winNone.jobExtra("a/b", "install.js"), { npmSafe: true }, "without it, npm skips dependencies' scripts")
+  const winHome = { root: "C:\\Users\\u\\obstat", dir: (n) => `C:\\Users\\u\\obstat\\${n}` }
+  const winApp = (id) => `C:\\Users\\u\\obstat\\apps\\${id.replace("/", "-")}`
+  const win = wallsLib.create(winHome, { appDir: winApp, platform: "win32", homeDir: "C:\\Users\\u", localAppData: "C:\\Users\\u\\AppData\\Local", detect: async () => ({ kind: "windows-sandbox", file: "C:\\Windows\\System32\\WindowsSandbox.exe" }), mkdir: () => {}, node: () => "C:\\Users\\u\\obstat\\bin\\node\\node.exe" })
   await win.ready
-  assert.equal(win.wrap("a/b", "/node", ["w.js"], {}, "install.js"), null)
+  const ww = win.wrap("a/b", "C:\\o\\Obstat.exe", ["C:\\o\\worker.js"], {}, "install.js")
+  assert.equal(ww.kind, "windows-sandbox")
+  assert.equal(ww.file, "C:\\o\\Obstat.exe", "the bridge runs here, on Obstat's own Node")
+  assert.equal(ww.args[0], require("../lib/vminstall").BRIDGE)
+  const cfg = require("../lib/vminstall").decode(ww.args[1])
+  const writable = cfg.maps.filter((m) => !m.readOnly).map((m) => m.host), readOnly = cfg.maps.filter((m) => m.readOnly).map((m) => m.host)
+  assert.ok(writable.includes(winApp("a/b")), "its own folder")
+  assert.ok(writable.includes("C:\\Users\\u\\AppData\\Local\\uv\\cache"), "the shared caches where Windows tools keep them")
+  assert.deepEqual(readOnly, ["C:\\Users\\u\\obstat\\bin"], "Obstat's runtimes, read only")
+  assert.ok(!writable.concat(readOnly).some((d) => d === "C:\\Users\\u" || d === "C:\\Users\\u\\obstat"), "not the home folder or Obstat's own")
+  assert.equal(win.wrap("a/b", "x", [], {}, "start.js"), null, "starting the app isn't walled")
+  assert.deepEqual(win.jobExtra("a/b", "install.js"), {}, "inside, npm runs as usual")
+  const wenv = win.env("a/b", "install.js")
+  assert.equal(wenv.UV_CACHE_DIR, "C:\\Users\\u\\AppData\\Local\\uv\\cache")
+  assert.equal(wenv.UV_LINK_MODE, "copy")
+  assert.ok(wenv.USERPROFILE.includes("install-home"))
+  // Obstat's folder on another drive: the sandbox only has C:, so no walls there
+  const elsewhere = wallsLib.create({ root: "D:\\obstat", dir: (n) => `D:\\obstat\\${n}` }, { appDir: (id) => `D:\\obstat\\apps\\${id.replace("/", "-")}`, platform: "win32", homeDir: "C:\\Users\\u", detect: async () => ({ kind: "windows-sandbox", file: "x" }), mkdir: () => {}, node: () => "D:\\obstat\\bin\\node.exe" })
+  await elsewhere.ready
+  assert.equal(elsewhere.wrap("a/b", "x", [], {}, "install.js"), null)
+  assert.deepEqual(elsewhere.jobExtra("a/b", "install.js"), { npmSafe: true })
 })
 
 test("the shared caches are where each tool keeps them by default", () => {
@@ -147,7 +173,7 @@ test("a reviewed app's install runs walled: no home folder, no keys, no other se
 
 test("where installs can't be walled, npm skips dependencies' scripts and secrets stay out", async () => {
   const h = fakeHome()
-  const win = wallsLib.create(h, { appDir: (id) => path.join(h.root, "apps", id), platform: "win32" })
+  const win = wallsLib.create(h, { appDir: (id) => path.join(h.root, "apps", id), platform: "win32", detect: async () => ({ kind: null }) })
   await win.ready
   assert.deepEqual(win.jobExtra("a/b", "install.js"), { npmSafe: true })
   assert.deepEqual(win.jobExtra("a/b", "update.js"), { npmSafe: true })

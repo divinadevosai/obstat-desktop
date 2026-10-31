@@ -34,8 +34,9 @@ const runtimes = runtimesLib.create(home, { fetchImpl: (url) => net.fetch(url), 
 const toWindow = (e) => { if (win && !win.isDestroyed()) win.webContents.send("obstat:event", e) }
 const lastOpen = new Map() // app id -> the address its start script asked to open
 const usage = usageLib.create(home)
-// installs (install.js, update.js, reset.js) run inside the OS sandbox on Mac and Linux (lib/walls.js)
-const walls = wallsLib.create(home, { appDir: (id) => apps.appDir(id) })
+// installs (install.js, update.js, reset.js) run inside the OS sandbox: bubblewrap, Apple's
+// sandbox, or Windows Sandbox where it's turned on (lib/walls.js)
+const walls = wallsLib.create(home, { appDir: (id) => apps.appDir(id), node: () => runtimes.exe("node") })
 const apps = appsLib.create(home, runtimes, {
   onRun: (r) => { usage.record(r); walls.done(r.id) },
   wrap: (id, file, args, env, script) => walls.wrap(id, file, args, env, script),
@@ -52,7 +53,7 @@ const apps = appsLib.create(home, runtimes, {
   // each app gets the keys shared with it (sandbox tests get none)
   // installs get no API keys: walled ones their own home and the shared caches instead
   jobEnv: (id, script) => walls.env(id, script) || (wallsLib.WALLED.has(script) ? {} : keys.envFor(id)),
-  // and an install that can't be walled (Windows) doesn't see secrets exported in Obstat's own environment
+  // and an install that can't be walled (Windows Home) doesn't see secrets exported in Obstat's own environment
   baseEnv: (script, walled) => (walled ? sandboxEnv(process.env) : wallsLib.WALLED.has(script) ? wallsLib.withoutSecrets(process.env) : process.env),
 })
 // The OS's own protection: Windows DPAPI, the Mac Keychain, or a Linux keyring. On Linux
