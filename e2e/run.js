@@ -94,13 +94,12 @@ async function main() {
   const runtimes = runtimesLib.create(home, { log: (l) => say(l) })
   const events = []
   let echo = true
-  // installs inside the OS sandbox on Mac and Linux, as Obstat runs them (lib/walls.js)
+  // installs walled as Obstat runs them (lib/walls.js): bubblewrap, Apple's sandbox, or
+  // low integrity on Windows
   const walls = wallsLib.create(home, { appDir: (id) => apps.appDir(id), execPath: process.execPath })
   const w = await walls.info()
-  if (process.platform !== "win32") {
-    if (!w.kind) fail(`installs aren't walled here: ${w.reason || "no OS sandbox"}`)
-    else say(`installs run inside ${w.kind === "bwrap" ? "bubblewrap" : "Apple's sandbox"}`)
-  }
+  if (!w.kind) fail(`installs aren't walled here: ${w.reason || "no OS sandbox"}`)
+  else say(`installs run inside ${{ bwrap: "bubblewrap", seatbelt: "Apple's sandbox", lowbox: "low integrity" }[w.kind] || w.kind}`)
   const apps = appsLib.create(home, runtimes, {
     wrap: (id, file, args, env, script) => walls.wrap(id, file, args, env, script),
     jobEnv: (id, script) => walls.env(id, script) || {},
