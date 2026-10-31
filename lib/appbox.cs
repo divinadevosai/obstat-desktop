@@ -211,6 +211,9 @@ static class AppBox {
     WaitForSingleObject(pi.hProcess, INFINITE);
     int code;
     GetExitCodeProcess(pi.hProcess, out code);
+    // Windows' own failures (a DLL it couldn't load, access denied) end a program
+    // with an NTSTATUS and nothing printed: say which
+    if ((uint)code >= 0xC0000000) Console.Error.WriteLine("Obstat's Windows install walls: " + program[0] + " ended with 0x" + ((uint)code).ToString("X8"));
     return code;
   }
 
