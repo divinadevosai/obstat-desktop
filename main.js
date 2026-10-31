@@ -182,7 +182,10 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("info", () => ({ version: app.getVersion(), home: home.root, platform: process.platform }))
   handle("list", async () => {
     try {
-      return await api.list(net.fetch)
+      const list = await api.list(net.fetch)
+      // pins for reviewed apps installed before the list carried them (lib/pins.js)
+      try { apps.setPins(list) } catch (err) { home.log(`pins: ${err.message}`) }
+      return list
     } catch (err) {
       home.log(`list: ${err.message}`)
       throw err

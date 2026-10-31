@@ -125,7 +125,7 @@ async function main() {
   const scripts = isBuild
     ? { "install.js": `module.exports = {\n  run: [\n    { method: "shell.run", params: { venv: "env", message: [${JSON.stringify(spec.install)}] } },\n  ],\n}\n` }
     : pick.scripts
-  const entry = { id, owner, name, url: `https://github.com/${spec.id}`, sha: isBuild ? spec.sha : pick.sha, reviewed: !isBuild, description: spec.about || "", ...(scripts ? { scripts } : {}) }
+  const entry = { id, owner, name, url: `https://github.com/${spec.id}`, sha: isBuild ? spec.sha : pick.sha, reviewed: !isBuild, description: spec.about || "", ...(scripts ? { scripts } : {}), ...(!isBuild && pick.clones ? { clones: pick.clones } : {}) }
 
   if (isSandbox) return sandboxRun(home, runtimes, entry, events, (v) => { echo = v })
 
