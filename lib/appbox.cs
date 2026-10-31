@@ -77,6 +77,9 @@ static class AppBox {
       if (argv.Length > 0 && argv[0] == "run") return Run(argv);
       Console.Error.WriteLine("usage: appbox run --name N ... -- PROGRAM ARGS | appbox test");
       return 2;
+    } catch (Win32Exception e) {
+      Console.Error.WriteLine("Obstat's Windows install walls: " + e.Message + " (Windows error " + e.NativeErrorCode + ": " + new Win32Exception(e.NativeErrorCode).Message + ")");
+      return 125;
     } catch (Exception e) {
       Console.Error.WriteLine("Obstat's Windows install walls: " + e.Message);
       return 125;
