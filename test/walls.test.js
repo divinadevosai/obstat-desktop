@@ -64,7 +64,7 @@ test("only install, update and reset are walled, and only where there are walls"
   assert.ok(after("--rw").includes(appDir("a/b")), "its own folder")
   assert.ok(after("--shared-rw").includes("C:\\Users\\u\\AppData\\Local\\uv\\cache"), "the shared caches where Windows tools keep them")
   assert.ok(!after("--rw").concat(after("--shared-rw")).includes("C:\\Users\\u"), "not the home folder")
-  assert.deepEqual(wa.slice(wa.indexOf("--") + 1), ["C:\\obstat\\obstat.exe", "--preserve-symlinks", "--preserve-symlinks-main", "C:\\obstat\\worker.js"])
+  assert.deepEqual(wa.slice(wa.indexOf("--") + 1), ["C:\\obstat\\obstat.exe", "--no-stdio-init", "--preserve-symlinks", "--preserve-symlinks-main", "C:\\obstat\\worker.js"])
   assert.equal(win.wrap("a/b", "x", [], {}, "start.js"), null, "starting the app isn't walled")
   assert.deepEqual(win.jobExtra("a/b", "install.js"), {}, "inside the walls npm runs as usual")
   const wenv = win.env("a/b", "install.js")

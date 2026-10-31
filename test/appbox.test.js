@@ -19,6 +19,8 @@ test("the helper starts Node with paths kept as given, after the folders it may 
   const w = appbox.wrap({ file: "box.exe" }, { name: "n", own: ["A"], shared: ["C"], readable: ["R"], cwd: "H" }, "node.exe", ["worker.js"])
   assert.equal(w.file, "box.exe")
   assert.deepEqual(w.args, ["run", "--name", "n", "--rw", "A", "--shared-rw", "C", "--shared-ro", "R", "--cwd", "H", "--", "node.exe", "--preserve-symlinks", "--preserve-symlinks-main", "worker.js"])
+  // Obstat itself (Electron run as Node) also skips its stdio check, which an AppContainer fails
+  assert.deepEqual(appbox.flagsFor("C:\\Program Files\\Obstat\\Obstat.exe")[0], "--no-stdio-init")
 })
 
 test("the package.json files above a script are found", () => {
@@ -60,12 +62,13 @@ test("inside a real AppContainer the worker installs into its own folder, talks 
     child.stderr.on("data", (d) => { err += d })
     const out = await new Promise((resolve) => {
       const r = { log: "", end: null }
-      const timer = setTimeout(() => { child.kill(); resolve({ ...r, end: "timeout" }) }, 120000)
-      child.on("message", (m) => { if (m.type === "log") r.log += m.text; else if (m.type === "done" || m.type === "error") { r.end = m.type; r.error = m.message; child.disconnect?.() } })
-      child.on("exit", () => { clearTimeout(timer); resolve(r) })
+      const timer = setTimeout(() => { child.kill(); resolve({ ...r, end: "timeout" }) }, 90000)
+      const end = () => { clearTimeout(timer); child.kill(); resolve(r) }
+      child.on("message", (m) => { if (m.type === "log") r.log += m.text; else if (m.type === "done" || m.type === "error") { r.end = m.type; r.error = m.message; end() } })
+      child.on("exit", (code) => { r.exit = code; end() })
       child.send({ type: "run", job: { appDir: app, script: "install.js", paths: [], python: "python", ctx: { platform: "win32", gpu: "none", args: {}, input: {}, port: 42021, env: {} }, approved: null, env: {} } })
     })
-    assert.equal(out.end, "done", `${out.log}\n${out.error}\n${err}`)
+    assert.equal(out.end, "done", `end: ${out.end}, exit: ${out.exit}\n${out.log}\n${out.error}\n${err}`)
     const said = (f) => fs.readFileSync(path.join(app, f), "utf8").trim()
     assert.equal(said("done.txt"), "inside")
     // scripts write to nul all the time ("> nul 2>&1"): it has to work inside
