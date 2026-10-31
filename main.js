@@ -19,6 +19,7 @@ const cppToolsLib = require("./lib/cpptools")
 const winSandboxLib = require("./lib/winsandbox")
 const divinaLib = require("./lib/divina")
 const usageLib = require("./lib/usage")
+const wallsLib = require("./lib/walls")
 const deeplink = require("./lib/deeplink")
 const platformLib = require("./lib/platform")
 const { MacUpdater } = require("./lib/macupdate")
@@ -32,8 +33,13 @@ const runtimes = runtimesLib.create(home, { fetchImpl: (url) => net.fetch(url), 
 const toWindow = (e) => { if (win && !win.isDestroyed()) win.webContents.send("obstat:event", e) }
 const lastOpen = new Map() // app id -> the address its start script asked to open
 const usage = usageLib.create(home)
+// installs (install.js, update.js, reset.js) run inside the OS sandbox on Mac and Linux (lib/walls.js)
+const walls = wallsLib.create(home, { appDir: (id) => apps.appDir(id) })
 const apps = appsLib.create(home, runtimes, {
-  onRun: (r) => usage.record(r),
+  onRun: (r) => { usage.record(r); walls.done(r.id) },
+  wrap: (id, file, args, env, script) => walls.wrap(id, file, args, env, script),
+  jobExtra: (id, script) => walls.jobExtra(id, script),
+  hfEnv: (id, script) => walls.hfEnv(id, script) || path.join(home.dir("cache"), "hf-env"),
   emit: (e) => {
     if (e.type === "open" && api.isLocalUrl(e.url)) lastOpen.set(e.id, e.url)
     // the app stopped: close its page inside Obstat
@@ -43,7 +49,8 @@ const apps = appsLib.create(home, runtimes, {
   // Electron runs the worker as plain Node
   workerEnv: { ELECTRON_RUN_AS_NODE: "1" },
   // each app gets the keys shared with it (sandbox tests get none)
-  jobEnv: (id) => keys.envFor(id),
+  // a walled install gets its own home and the shared caches, and no API keys
+  jobEnv: (id, script) => walls.env(id, script) || keys.envFor(id),
 })
 // The OS's own protection: Windows DPAPI, the Mac Keychain, or a Linux keyring. On Linux
 // without a keyring, Electron falls back to a built-in key anyone could use, so that counts

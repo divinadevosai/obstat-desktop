@@ -27,6 +27,7 @@ const homeLib = require("../lib/home")
 const runtimesLib = require("../lib/runtimes")
 const appsLib = require("../lib/apps")
 const sandboxLib = require("../lib/sandbox")
+const wallsLib = require("../lib/walls")
 const buildUi = require("../lib/buildui")
 const api = require("../lib/api")
 
@@ -93,7 +94,19 @@ async function main() {
   const runtimes = runtimesLib.create(home, { log: (l) => say(l) })
   const events = []
   let echo = true
+  // installs inside the OS sandbox on Mac and Linux, as Obstat runs them (lib/walls.js)
+  const walls = wallsLib.create(home, { appDir: (id) => apps.appDir(id), execPath: process.execPath })
+  const w = await walls.info()
+  if (process.platform !== "win32") {
+    if (!w.kind) fail(`installs aren't walled here: ${w.reason || "no OS sandbox"}`)
+    else say(`installs run inside ${w.kind === "bwrap" ? "bubblewrap" : "Apple's sandbox"}`)
+  }
   const apps = appsLib.create(home, runtimes, {
+    wrap: (id, file, args, env, script) => walls.wrap(id, file, args, env, script),
+    jobEnv: (id, script) => walls.env(id, script) || {},
+    jobExtra: (id, script) => walls.jobExtra(id, script),
+    hfEnv: (id, script) => walls.hfEnv(id, script) || path.join(home.dir("cache"), "hf-env"),
+    onRun: (r) => walls.done(r.id),
     emit: (e) => {
       events.push(e)
       if (e.type === "log" && echo) out(e.text)
