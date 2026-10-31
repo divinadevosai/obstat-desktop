@@ -107,6 +107,8 @@ async function main() {
     jobExtra: (id, script) => walls.jobExtra(id, script),
     hfEnv: (id, script) => walls.hfEnv(id, script) || path.join(home.dir("cache"), "hf-env"),
     onRun: (r) => walls.done(r.id),
+    // as Obstat runs them: an install that can't be walled doesn't see secrets in the environment
+    baseEnv: (script, walled) => (walled ? require("../lib/confine").sandboxEnv(process.env) : wallsLib.WALLED.has(script) ? wallsLib.withoutSecrets(process.env) : process.env),
     emit: (e) => {
       events.push(e)
       if (e.type === "log" && echo) out(e.text)
