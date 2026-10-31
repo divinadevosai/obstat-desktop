@@ -23,7 +23,10 @@ test("only install, update and reset are walled, and only where there are walls"
   assert.equal(none.env("a/b", "install.js"), null)
 
   const seen = []
-  const yes = wallsLib.create(h, { appDir, platform: "linux", homeDir: "/home/u", detect: async () => ({ kind: "bwrap", file: "/usr/bin/bwrap" }), mkdir: (d) => seen.push(d) })
+  // (a stand-in for Obstat's proxy: this test only looks at the arguments, on any system)
+  const proxies = []
+  const proxy = (sock) => { const p = { sock, closed: false, close() { this.closed = true } }; proxies.push(p); return p }
+  const yes = wallsLib.create(h, { appDir, platform: "linux", homeDir: "/home/u", detect: async () => ({ kind: "bwrap", file: "/usr/bin/bwrap" }), mkdir: (d) => seen.push(d), proxy })
   await yes.ready
   for (const s of ["start.js", "tensorboard.js", "link.js"]) assert.equal(yes.wrap("a/b", "/node", ["w.js"], {}, s), null, s)
   const w = yes.wrap("a/b", "/node", ["w.js"], {}, "install.js")
@@ -41,6 +44,8 @@ test("only install, update and reset are walled, and only where there are walls"
   assert.equal(yes.env("a/b", "start.js"), null)
   assert.match(yes.hfEnv("a/b", "reset.js"), /install-home/)
   yes.done("a/b")
+  assert.equal(proxies.length, 1)
+  assert.ok(proxies[0].closed, "the install's network closes when it ends")
 
   // Windows: never (Windows Sandbox is a separate copy of Windows)
   const win = wallsLib.create(h, { appDir, platform: "win32", detect: async () => ({ kind: "bwrap" }) })
