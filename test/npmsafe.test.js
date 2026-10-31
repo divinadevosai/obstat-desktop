@@ -48,7 +48,8 @@ test("a real npm install: a dependency's postinstall is skipped, an allowed one 
   dep("evil", `node -e "require('fs').writeFileSync('${path.join(dir, "pwned.txt").replace(/\\/g, "/")}', 'x')"`)
   // one on the allowlist (named like the real esbuild), which needs its script
   dep("esbuild", "node -e \"require('fs').writeFileSync('built.txt', 'ok')\"")
-  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "app", version: "1.0.0", private: true,
+  // "type": "module", as many apps' package.json say (Plazai's does)
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "app", version: "1.0.0", private: true, type: "module",
     dependencies: { evil: "file:./deps/evil", esbuild: "file:./deps/esbuild" },
     scripts: { postinstall: "node -e \"require('fs').writeFileSync('own.txt', 'ok')\"" } }))
   fs.writeFileSync(path.join(dir, "install.js"), 'module.exports = { run: [{ method: "shell.run", params: { message: ["npm install --no-audit --no-fund --install-links"] } }] }\n')
