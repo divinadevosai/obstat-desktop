@@ -172,6 +172,9 @@ async function loadList() {
 
 // ---------- views ----------
 
+// Fully pinned: every package it installs is locked to an exact, hash-checked version (the Obstat list says so)
+const pinnedBadge = () => el("a", { class: "badge pinned", href: "#/reviews", title: "Everything it installs is locked to exact versions, each checked against its hash. Click to see what that means.", text: "Fully pinned" })
+
 function row(r) {
   const open = () => go(appHash(r))
   return el("div", { class: "row", role: "link", tabindex: "0", onclick: open, onkeydown: (e) => { if (e.key === "Enter") open() } },
@@ -179,6 +182,7 @@ function row(r) {
     el("h3", { text: r.name }, el("small", { text: r.owner })),
     el("div", { class: "meta" },
       r.reviewedAt ? el("span", { class: "badge ok", text: `${r.testedAt ? "Reviewed and tested" : "Reviewed"} ${day(r.reviewedAt)}` }) : el("span", { class: "badge warn", text: "Not reviewed" }),
+      r.locked && pinnedBadge(),
       el("span", { text: stars(r.stars) }),
       r.language && el("span", { text: r.language })),
     el("p", { text: r.description || "No description." }))
@@ -556,6 +560,7 @@ const views = {
           el("div", { class: "meta" },
             mine ? el("span", { class: "badge", text: local.copiedFrom ? `Your copy of ${local.copiedFrom}` : "Made by you" })
               : isReviewed ? el("span", { class: "badge ok", text: reviewed ? `${reviewed.testedAt ? "Reviewed and tested" : "Reviewed"} ${day(reviewed.reviewedAt)}` : "Reviewed" }) : el("span", { class: "badge warn", text: "Not reviewed" }),
+            !mine && isReviewed && reviewed?.locked && pinnedBadge(),
             local?.edited && el("span", { class: "badge warn", text: "Scripts edited" }),
             local?.installed && el("span", { class: "badge", text: r ? busyLabel(r) : "Installed" }),
             test && el("span", { class: "badge sandbox", text: `In the sandbox: ${STATUS[test.status] || test.status}` }),
@@ -608,7 +613,11 @@ const views = {
       el("li", {}, el("b", { text: "Someone submits a repo" }), el("span", { text: "On obstat.app or from this app." })),
       el("li", {}, el("b", { text: "A person reads the scripts" }), el("span", { text: "Every install and start step, at one exact commit." })),
       el("li", {}, el("b", { text: "That commit is pinned" }), el("span", { text: "Obstat installs only the commit that was reviewed." })),
-      el("li", {}, el("b", { text: "Changes take it off the list" }), el("span", { text: "Checked every 15 minutes. New commits mean a new review." })))),
+      el("li", {}, el("b", { text: "Changes take it off the list" }), el("span", { text: "Checked every 15 minutes. New commits mean a new review." }))),
+    el("h2", { class: "group-h", text: "What's pinned" }),
+    el("dl", { class: "rows" },
+      el("div", {}, el("dt", {}, "Every reviewed app", el("small", { text: "Its install and start steps, and every repo they clone, are held to the commits that were reviewed. On Mac and Linux, installing runs inside the OS sandbox; on Windows, dependencies' npm install scripts are skipped except for a short list of packages that need them." }))),
+      el("div", {}, el("dt", {}, pinnedBadge(), el("small", { text: "Also every package it installs: exact versions from a lockfile, each checked against its hash, and nothing else it downloads can change. The same install every time, on every computer." }))))),
 
   logs: async () => {
     const files = await ask("logs")
