@@ -616,7 +616,7 @@ const views = {
       el("li", {}, el("b", { text: "Changes take it off the list" }), el("span", { text: "Checked every 15 minutes. New commits mean a new review." }))),
     el("h2", { class: "group-h", text: "What's pinned" }),
     el("dl", { class: "rows" },
-      el("div", {}, el("dt", {}, "Every reviewed app", el("small", { text: "Its install and start steps, and every repo they clone, are held to the commits that were reviewed. On Mac and Linux, installing runs inside the OS sandbox; on Windows, dependencies' npm install scripts are skipped except for a short list of packages that need them." }))),
+      el("div", {}, el("dt", {}, "Every reviewed app", el("small", { text: "Its install and start steps, and every repo they clone, are held to the commits that were reviewed. On Mac and Linux, installing runs inside the OS sandbox. On Windows it runs at low integrity: it can write only its own folder and the package caches, and can't read Obstat's keys or sign-in, and dependencies' npm install scripts are skipped except for a short list of packages that need them." }))),
       el("div", {}, el("dt", {}, pinnedBadge(), el("small", { text: "Also every package it installs: exact versions from a lockfile, each checked against its hash, and nothing else it downloads can change. The same install every time, on every computer." }))))),
 
   logs: async () => {
