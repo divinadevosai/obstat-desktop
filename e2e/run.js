@@ -105,7 +105,7 @@ async function main() {
     jobEnv: (id, script) => walls.env(id, script) || {},
     jobExtra: (id, script) => walls.jobExtra(id, script),
     hfEnv: (id, script) => walls.hfEnv(id, script) || path.join(home.dir("cache"), "hf-env"),
-    onRun: (r) => walls.done(r.id),
+    onRun: (r) => { walls.done(r.id); if (process.platform === "win32" && r.script === "install.js") { try { require("node:child_process").execFileSync("icacls", [apps.appDir(r.id), "/setintegritylevel", "(OI)(CI)M", "/T", "/C", "/Q"], { stdio: "ignore" }); say("diag: app folder relabelled Medium") } catch (e) { say("diag: relabel failed " + e.message) } } },
     // as Obstat runs them: an install that can't be walled doesn't see secrets in the environment
     baseEnv: (script, walled) => (walled ? require("../lib/confine").sandboxEnv(process.env) : wallsLib.WALLED.has(script) ? wallsLib.withoutSecrets(process.env) : process.env),
     emit: (e) => {
