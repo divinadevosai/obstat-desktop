@@ -2,13 +2,16 @@
 // integrity, the level browsers run their sandboxes at. Compiled on first use by
 // lib/lowbox.js with the C# compiler that comes with Windows (.NET Framework 4).
 //
-//   lowbox run [--low DIR]... [--hide PATH]... [--cwd DIR] -- PROGRAM ARGS...
+//   lowbox run [--low DIR]... [--reset DIR]... [--hide PATH]... [--cwd DIR] -- PROGRAM ARGS...
 //   lowbox test
 //
 // Windows doesn't let a low-integrity program write anything that isn't labelled low
 // itself: --low labels the folders the install may write (its own folder, its install
 // home, the package caches), and everything else on this computer stays out of its
-// reach for writing. --hide labels Obstat's own secrets (keys, sign-in, logs) "no
+// reach for writing. --reset folders (the app's own) lose the low label again when the
+// program ends, with everything the install made in them: apps refuse files lower
+// programs could change (OpenClaw's config) or can't open them (Open WebUI's vector
+// database), and only the install needs to write there. --hide labels Obstat's own secrets (keys, sign-in, logs) "no
 // read up", so it can't read those either. It can still read the rest of your files,
 // and reach the network.
 // Handles Obstat passed to this process (its IPC pipe, stderr) are passed on, and the
@@ -63,6 +66,7 @@ static class LowBox {
   [DllImport("advapi32.dll", CharSet = CharSet.Unicode)] static extern int SetNamedSecurityInfoW(string name, int type, int info, IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
   [DllImport("advapi32.dll", CharSet = CharSet.Unicode)] static extern int GetNamedSecurityInfoW(string name, int type, int info, IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl, out IntPtr sd);
   [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr p);
+  [DllImport("advapi32.dll", SetLastError = true)] static extern bool InitializeAcl(IntPtr acl, int len, int rev);
   [DllImport("kernel32.dll")] static extern void GetStartupInfoW(out STARTUPINFO si);
   [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CreateProcessAsUserW(IntPtr token, string app, StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit, int flags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
   [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr CreateJobObjectW(IntPtr a, IntPtr name);
@@ -97,12 +101,12 @@ static class LowBox {
 
   static int Run(string[] argv) {
     string cwd = null;
-    var low = new List<string>(); var hide = new List<string>();
+    var low = new List<string>(); var hide = new List<string>(); var reset = new List<string>();
     int i = 1;
     for (; i < argv.Length && argv[i] != "--"; i++) {
       string a = argv[i], v = i + 1 < argv.Length ? argv[i + 1] : null;
       if (v == null) throw new ArgumentException(a + " needs a value");
-      if (a == "--cwd") cwd = v; else if (a == "--low") low.Add(v); else if (a == "--hide") hide.Add(v);
+      if (a == "--cwd") cwd = v; else if (a == "--low") low.Add(v); else if (a == "--hide") hide.Add(v); else if (a == "--reset") reset.Add(v);
       else throw new ArgumentException("unknown option " + a);
       i++;
     }
@@ -112,7 +116,61 @@ static class LowBox {
     // secrets first, then the folders the install may write
     foreach (var p in hide) Label(p, Directory.Exists(p) ? "(ML;OICI;NWNR;;;ME)" : "(ML;;NWNR;;;ME)");
     foreach (var p in low) if (Directory.Exists(p)) Label(p, "(ML;OICI;NW;;;LW)");
-    return Launch(cwd, program);
+    int code = Launch(cwd, program);
+    var started = DateTime.UtcNow;
+    int n = 0;
+    foreach (var p in reset) n += Reset(p);
+    if (n > 0) Console.Error.WriteLine("(Obstat's Windows install walls: " + n + " files and folders the install made are ordinary again, in " + (int)(DateTime.UtcNow - started).TotalSeconds + "s.)");
+    return code;
+  }
+
+  // An empty label: the object is at the default (medium) level again.
+  static void Unlabel(string p) {
+    IntPtr acl = Marshal.AllocHGlobal(8);
+    try {
+      if (!InitializeAcl(acl, 8, 2)) throw new Win32Exception(Marshal.GetLastWin32Error());
+      SetNamedSecurityInfoW(p, SE_FILE_OBJECT, LABEL_SECURITY_INFORMATION, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, acl);
+    } finally { Marshal.FreeHGlobal(acl); }
+  }
+
+  // A label of the object's own (not inherited from its folder)?
+  static bool OwnLabel(string p) {
+    IntPtr sd;
+    if (GetNamedSecurityInfoW(p, SE_FILE_OBJECT, LABEL_SECURITY_INFORMATION, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, out sd) != 0) return false;
+    try {
+      IntPtr str;
+      if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(sd, 1, LABEL_SECURITY_INFORMATION, out str, IntPtr.Zero)) return false;
+      string s = Marshal.PtrToStringUni(str);
+      LocalFree(str);
+      int i = s == null ? -1 : s.IndexOf("(ML;");
+      if (i < 0) return false;
+      int j = s.IndexOf(';', i + 4);
+      return j > 0 && s.Substring(i + 4, j - i - 4).IndexOf("ID") < 0;
+    } finally { LocalFree(sd); }
+  }
+
+  // The folder's own label goes, and every label of their own the things in it got (all
+  // that a low-integrity program makes is labelled low). Links aren't followed: what
+  // they point to may be outside the folder.
+  static int Reset(string root) {
+    if (!Directory.Exists(root)) return 0;
+    int n = 0;
+    Unlabel(root);
+    var todo = new Stack<string>();
+    todo.Push(root);
+    while (todo.Count > 0) {
+      string dir = todo.Pop();
+      IEnumerable<string> entries;
+      try { entries = Directory.EnumerateFileSystemEntries(dir); } catch { continue; }
+      foreach (var e in entries) {
+        FileAttributes at;
+        try { at = File.GetAttributes(e); } catch { continue; }
+        if ((at & FileAttributes.ReparsePoint) != 0) continue;
+        if (OwnLabel(e)) { Unlabel(e); n++; }
+        if ((at & FileAttributes.Directory) != 0) todo.Push(e);
+      }
+    }
+    return n;
   }
 
   // Sets a folder's or file's integrity label (one label ACE, as SDDL), and for a folder

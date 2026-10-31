@@ -65,6 +65,7 @@ test("only install, update and reset are walled, and only where there are walls"
   assert.ok(after("--low").includes(winApp("a/b")), "its own folder")
   assert.ok(after("--low").includes("C:\\Users\\u\\AppData\\Local\\uv\\cache"), "the shared caches where Windows tools keep them")
   assert.ok(!after("--low").some((d) => d === "C:\\Users\\u" || d === winHome.root), "not the home folder or Obstat's own")
+  assert.deepEqual(after("--reset"), [winApp("a/b"), "C:\\Users\\u\\obstat\\cache\\install-home\\a-b"], "the app's own folders are ordinary again after")
   for (const f of ["keys.json", "account.json", "control.json", "logs"]) assert.ok(after("--hide").includes(`C:\\Users\\u\\obstat\\${f}`), `${f} can't be read`)
   assert.ok(after("--hide").includes("C:\\Users\\u\\AppData\\Roaming\\Obstat"), "nor Electron's own data")
   assert.deepEqual(wa.slice(wa.indexOf("--") + 1), ["C:\\o\\Obstat.exe", "C:\\o\\worker.js"])

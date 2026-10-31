@@ -9,9 +9,9 @@ const { spawn } = require("node:child_process")
 const lowbox = require("../lib/lowbox")
 
 test("the helper is given what to label and what to start", () => {
-  const w = lowbox.wrap({ file: "box.exe" }, { low: ["A", "C"], hide: ["K"], cwd: "H" }, "node.exe", ["worker.js"])
+  const w = lowbox.wrap({ file: "box.exe" }, { low: ["A", "C"], reset: ["A"], hide: ["K"], cwd: "H" }, "node.exe", ["worker.js"])
   assert.equal(w.file, "box.exe")
-  assert.deepEqual(w.args, ["run", "--low", "A", "--low", "C", "--hide", "K", "--cwd", "H", "--", "node.exe", "worker.js"])
+  assert.deepEqual(w.args, ["run", "--low", "A", "--low", "C", "--reset", "A", "--hide", "K", "--cwd", "H", "--", "node.exe", "worker.js"])
 })
 
 const WORKER = path.join(__dirname, "..", "lib", "worker.js")
@@ -38,7 +38,7 @@ test("at low integrity the worker installs into its own folder and the caches, c
       "(echo probe > nul && echo yes || echo no) > nul.result",
       "echo inside> done.txt",
     ] } }] }`)
-    const w = lowbox.wrap(found, { low: [app, ihome, shared], hide: [keys], cwd: ihome }, process.execPath, [WORKER])
+    const w = lowbox.wrap(found, { low: [app, ihome, shared], reset: [app, ihome], hide: [keys], cwd: ihome }, process.execPath, [WORKER])
     const env = { ...require("../lib/confine").sandboxEnv(process.env), ELECTRON_RUN_AS_NODE: "1", HOME: ihome, USERPROFILE: ihome, TEMP: ihome, TMP: ihome, APPDATA: ihome, LOCALAPPDATA: ihome }
     child = spawn(w.file, w.args, { env, cwd: ihome, stdio: ["ignore", "ignore", "pipe", "ipc"], windowsHide: true })
     let err = ""
@@ -47,7 +47,8 @@ test("at low integrity the worker installs into its own folder and the caches, c
       const r = { log: "", end: null }
       const timer = setTimeout(() => { child.kill(); resolve({ ...r, end: "timeout" }) }, 90000)
       const end = () => { clearTimeout(timer); child.kill(); resolve(r) }
-      child.on("message", (m) => { if (m.type === "log") r.log += m.text; else if (m.type === "done" || m.type === "error") { r.end = m.type; r.error = m.message; end() } })
+      // as Obstat does for walled runs: done once the helper has ended too (it tidies up the labels)
+      child.on("message", (m) => { if (m.type === "log") r.log += m.text; else if (m.type === "done" || m.type === "error") { r.end = m.type; r.error = m.message } })
       child.on("exit", (code) => { r.exit = code; end() })
       child.send({ type: "run", job: { appDir: app, script: "install.js", paths: [], python: "python", ctx: { platform: "win32", gpu: "none", args: {}, input: {}, port: 42021, env: {} }, approved: null, env: {} } })
     })
@@ -61,6 +62,10 @@ test("at low integrity the worker installs into its own folder and the caches, c
     assert.equal(said("other.result"), "no", "changed another app's folder")
     assert.equal(said("home.result"), "no", "wrote in the home folder")
     assert.equal(fs.existsSync(path.join(top, "escaped.txt")), false)
+    // and once it has ended, what it made in the app's folder is ordinary again
+    const label = require("node:child_process").execFileSync("icacls", [path.join(app, "done.txt")], { encoding: "utf8" })
+    assert.ok(!/Mandatory Label\\Low/i.test(label), label)
+    assert.match(err, /are ordinary again/)
   } finally {
     // the worker runs in the install home: let it end before its folders go
     if (child && child.exitCode === null) await new Promise((r) => { child.once("exit", r); setTimeout(r, 10000) })
