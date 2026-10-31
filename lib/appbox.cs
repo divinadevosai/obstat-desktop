@@ -112,6 +112,11 @@ static class AppBox {
     var program = new string[argv.Length - i - 1];
     Array.Copy(argv, i + 1, program, 0, program.Length);
 
+    // Windows reads these when it starts a program in an AppContainer (error 203
+    // without them); an install's own come from Obstat, else its working folder
+    foreach (var v in new[] { "LOCALAPPDATA", "APPDATA", "USERPROFILE", "TEMP", "TMP" })
+      if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(v)) && cwd != null) Environment.SetEnvironmentVariable(v, cwd);
+
     IntPtr sid = Container(name);
     var own = new SecurityIdentifier(sid);
     var shared = new SecurityIdentifier(CapabilitySid());

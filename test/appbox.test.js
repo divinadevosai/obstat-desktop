@@ -52,7 +52,7 @@ test("inside a real AppContainer the worker installs into its own folder, talks 
     ] } }] }`)
     const w = appbox.wrap(found, { name: appbox.containerName(`test/${path.basename(top)}`), own: [app, ihome], readable: [path.dirname(node), path.join(__dirname, "..", "lib")], cwd: ihome }, node, [WORKER])
     const { spawn } = require("node:child_process")
-    const env = { ...require("../lib/confine").sandboxEnv(process.env), ELECTRON_RUN_AS_NODE: "1", HOME: ihome, USERPROFILE: ihome, TEMP: ihome, TMP: ihome }
+    const env = { ...require("../lib/confine").sandboxEnv(process.env), ELECTRON_RUN_AS_NODE: "1", HOME: ihome, USERPROFILE: ihome, TEMP: ihome, TMP: ihome, APPDATA: ihome, LOCALAPPDATA: ihome }
     const child = spawn(w.file, w.args, { env, cwd: ihome, stdio: ["ignore", "ignore", "pipe", "ipc"], windowsHide: true })
     let err = ""
     child.stderr.on("data", (d) => { err += d })
