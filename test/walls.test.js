@@ -144,3 +144,14 @@ test("a reviewed app's install runs walled: no home folder, no keys, no other se
     fs.rmSync(h.root, { recursive: true, force: true })
   }
 })
+
+test("where installs can't be walled, npm skips dependencies' scripts and secrets stay out", async () => {
+  const h = fakeHome()
+  const win = wallsLib.create(h, { appDir: (id) => path.join(h.root, "apps", id), platform: "win32" })
+  await win.ready
+  assert.deepEqual(win.jobExtra("a/b", "install.js"), { npmSafe: true })
+  assert.deepEqual(win.jobExtra("a/b", "update.js"), { npmSafe: true })
+  assert.deepEqual(win.jobExtra("a/b", "start.js"), {})
+  const env = wallsLib.withoutSecrets({ PATH: "p", SystemRoot: "C:\\Windows", USERPROFILE: "u", OPENAI_API_KEY: "sk", GITHUB_TOKEN: "t", AWS_REGION: "x", HF_TOKEN: "h", MY_SECRET: "s" })
+  assert.deepEqual(Object.keys(env).sort(), ["PATH", "SystemRoot", "USERPROFILE"])
+})
