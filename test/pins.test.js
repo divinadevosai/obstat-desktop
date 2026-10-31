@@ -91,6 +91,8 @@ test("anything that would fetch unreviewed code stops the step", () => {
 const { fork, execFileSync } = require("node:child_process")
 const WORKER = path.join(__dirname, "..", "lib", "worker.js")
 const gitOk = (() => { try { execFileSync("git", ["--version"]); return true } catch { return false } })()
+// Windows git may check text out with CRLF line endings
+const text = (f) => fs.readFileSync(f, "utf8").replace(/\r\n/g, "\n")
 const g = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" }).trim()
 
 function runWorker(dir, script, job) {
@@ -124,7 +126,7 @@ test("a reviewed launcher installs and updates its app at the pinned commit, thr
   const install = await runWorker(dir, "install.js", job)
   assert.equal(install.end, "done", install.log + install.error)
   assert.equal(g(path.join(dir, "app"), "rev-parse", "HEAD"), reviewed)
-  assert.equal(fs.readFileSync(path.join(dir, "app", "app.py"), "utf8"), "reviewed\n")
+  assert.equal(text(path.join(dir, "app", "app.py")), "reviewed\n")
 
   const update = await runWorker(dir, "update.js", job)
   assert.equal(update.end, "done", update.log + update.error)
@@ -140,5 +142,5 @@ test("a reviewed launcher installs and updates its app at the pinned commit, thr
   fs.mkdirSync(loose); fs.copyFileSync(path.join(dir, "install.js"), path.join(loose, "install.js"))
   const free = await runWorker(loose, "install.js", { env })
   assert.equal(free.end, "done", free.log + free.error)
-  assert.equal(fs.readFileSync(path.join(loose, "app", "app.py"), "utf8"), "NOT reviewed\n")
+  assert.equal(text(path.join(loose, "app", "app.py")), "NOT reviewed\n")
 })
