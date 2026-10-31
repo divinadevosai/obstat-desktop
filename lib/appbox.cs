@@ -34,9 +34,10 @@ static class AppBox {
 
   [StructLayout(LayoutKind.Sequential)] struct SID_AND_ATTRIBUTES { public IntPtr Sid; public int Attributes; }
   [StructLayout(LayoutKind.Sequential)] struct SECURITY_CAPABILITIES { public IntPtr AppContainerSid; public IntPtr Capabilities; public int CapabilityCount; public int Reserved; }
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  // pointers, not strings: these belong to Windows (GetStartupInfoW), and .NET would free them
+  [StructLayout(LayoutKind.Sequential)]
   struct STARTUPINFO {
-    public int cb; public string lpReserved; public string lpDesktop; public string lpTitle;
+    public int cb; public IntPtr lpReserved; public IntPtr lpDesktop; public IntPtr lpTitle;
     public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
     public short wShowWindow, cbReserved2; public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
   }
@@ -59,7 +60,7 @@ static class AppBox {
   [DllImport("userenv.dll", CharSet = CharSet.Unicode)] static extern int DeriveAppContainerSidFromAppContainerName(string name, out IntPtr sid);
   [DllImport("kernelbase.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool DeriveCapabilitySidsFromName(string name, out IntPtr groupSids, out int groupCount, out IntPtr capSids, out int capCount);
   [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool ConvertStringSidToSid(string s, out IntPtr sid);
-  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern void GetStartupInfoW(out STARTUPINFO si);
+  [DllImport("kernel32.dll")] static extern void GetStartupInfoW(out STARTUPINFO si);
   [DllImport("kernel32.dll", SetLastError = true)] static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref IntPtr size);
   [DllImport("kernel32.dll", SetLastError = true)] static extern bool UpdateProcThreadAttribute(IntPtr list, int flags, IntPtr attr, IntPtr value, IntPtr size, IntPtr prev, IntPtr retSize);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CreateProcessW(string app, StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit, int flags, IntPtr env, string cwd, ref STARTUPINFOEX si, out PROCESS_INFORMATION pi);
@@ -192,7 +193,7 @@ static class AppBox {
     var si = new STARTUPINFOEX();
     si.StartupInfo = own;
     si.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
-    si.StartupInfo.lpReserved = null; si.StartupInfo.lpTitle = null;
+    si.StartupInfo.lpReserved = IntPtr.Zero; si.StartupInfo.lpTitle = IntPtr.Zero;
     si.lpAttributeList = list;
 
     var cmd = new StringBuilder();
