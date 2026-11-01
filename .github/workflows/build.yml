@@ -12,6 +12,11 @@ on:
 
 permissions:
   contents: write
+  # signed build provenance for the installers (GitHub artifact attestations): anyone can
+  # check an installer came from this repository's workflow, at which commit, with
+  # `gh attestation verify <file> --repo divinadevosai/obstat-desktop`
+  id-token: write
+  attestations: write
 
 # a newer push replaces a build still waiting for a runner
 concurrency:
@@ -41,6 +46,11 @@ jobs:
       - name: Check the self-updater's files were made
         shell: bash
         run: ls dist/latest.yml dist/Obstat-Setup-*.exe dist/Obstat-Setup-*.exe.blockmap
+      - name: Sign where the installer was built
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/Obstat-Setup-*.exe
       - name: Publish the installer to the desktop-preview release
         # only merged code reaches people: pull requests build and test, but don't publish
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -93,6 +103,14 @@ jobs:
           done
       - name: Update an installed copy with this build, the way the Mac updater does
         run: node e2e/macupdate-check.js
+      - name: Sign where the app was built
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@v2
+        with:
+          # the fixed-name .dmg copies made below are the same files, so this covers them too
+          subject-path: |
+            dist/Obstat-*-mac-*.zip
+            dist/Obstat-*-mac-*.dmg
       - name: Publish to the desktop-preview release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
@@ -142,6 +160,11 @@ jobs:
           name: linux-deb
           path: dist/Obstat-*-linux-amd64.deb
           retention-days: 3
+      - name: Sign where the app was built
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/Obstat-0.2.${{ github.run_number }}-linux-*
       - name: Publish to the desktop-preview release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
