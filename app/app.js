@@ -476,6 +476,7 @@ const views = {
           ? `${e.name} looks like a command-line app (it runs ${d.found.command.join(" ")}). Obstat can give it a screen: a form for its options, a Run button, and its output and files on the page. It opens here in Obstat.`
           : "Obstat couldn't tell which command this app runs, so the instant UI isn't available. An AI agent can read the code and build one." }),
         isReviewed ? el("p", { class: "card-err", text: "This adds files to a reviewed app. The app's own code stays as it was reviewed." }) : "",
+        !isReviewed && agents.length ? el("p", { class: "card-err", text: "Nobody has reviewed this repo. An AI agent works on your PC, not in the sandbox, so watch what it asks to run." }) : "",
         el("div", { class: "row-btns" },
           d.found && el("button", { class: "btn small", text: d.has ? "Rebuild the Obstat UI" : "Make the Obstat UI", onclick: async () => {
             status.textContent = "Building…"
@@ -490,6 +491,7 @@ const views = {
             } catch (err) { status.textContent = err.message }
           } }),
           ...agents.map((t) => el("button", { class: "btn small ghost", text: `Custom UI with ${t.name}`, onclick: async () => {
+            if (!isReviewed && !confirm(`Nobody has reviewed this repo. ${t.name} will read its files on your PC, outside the sandbox, and a repo can hide instructions aimed at AI agents. Only approve commands you understand. Continue?`)) return
             try { await ask("buildUi", id, t.id); status.textContent = `${t.name} is building it in its own window. When it's done, Open with Obstat UI shows up under Run.` } catch (err) { status.textContent = err.message }
           } }))),
         !agents.length && el("p", { class: "note", text: "For a custom-made UI, install Claude Code, Codex or Gemini CLI (see Tools)." }),
