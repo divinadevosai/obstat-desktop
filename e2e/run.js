@@ -168,6 +168,9 @@ async function main() {
   if (!api.isLocalUrl(url)) fail(`its address isn't on this PC: ${url}`)
   say(`running at ${url}`)
   echo = false
+  // what Obstat can read of the app's own API (lib/appapi.js): for Autopilot to call it later
+  const appApi = await require("../lib/appapi").discover(url)
+  say(appApi.kind ? `its API: ${appApi.kind}${appApi.prefix ? ` (${appApi.prefix})` : ""}, ${appApi.endpoints.length} endpoint${appApi.endpoints.length === 1 ? "" : "s"}: ${appApi.endpoints.slice(0, 6).map((e) => `${e.name}(${e.inputs.map((i) => i.name).join(", ")})`).join(" ")}` : `its API: none readable (${appApi.reason}${appApi.tried ? ` [${appApi.tried.join("; ")}]` : ""})`)
 
   const page = electron ? await viewPage(id, url) : await fetchPage(url)
   if (isBuild && electron) await useBuiltUi(page)

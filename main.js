@@ -19,6 +19,7 @@ const cppToolsLib = require("./lib/cpptools")
 const winSandboxLib = require("./lib/winsandbox")
 const divinaLib = require("./lib/divina")
 const usageLib = require("./lib/usage")
+const appApi = require("./lib/appapi")
 const wallsLib = require("./lib/walls")
 const { sandboxEnv } = require("./lib/confine")
 const deeplink = require("./lib/deeplink")
@@ -347,6 +348,13 @@ app.whenReady().then(() => shellPath).then(() => {
     changesCache.set(repo, { at: Date.now(), value })
     return value
   }
+  // what a running app offers as an API (lib/appapi.js): read from the app itself
+  handle("app-api", async (id) => {
+    if (typeof id !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(id)) throw new Error("That isn't an app id.")
+    const url = apps.get(id)?.running?.url
+    if (!url) return { kind: null, reason: "Start the app to see what it offers." }
+    return appApi.discover(url)
+  })
   handle("app-changes", async (id) => {
     if (typeof id !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(id)) throw new Error("That isn't an app id.")
     const mine = apps.get(id)

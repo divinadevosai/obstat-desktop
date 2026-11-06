@@ -111,6 +111,25 @@ function changesList(c) {
   }
   return box
 }
+// What a running app offers as an API, read from the app itself (lib/appapi.js): the
+// endpoints Autopilot can call, with their inputs and what comes back. The names
+// come from the app, so they're shown as plain text.
+function apiList(a) {
+  const box = el("div", { class: "changes app-api" }, el("h2", { text: "What it can do" }))
+  if (!a || !a.kind) {
+    box.appendChild(el("p", { class: "note", text: a?.reason || "This app doesn't describe an API Obstat can read." }))
+    return box
+  }
+  box.appendChild(el("p", { class: "note", text: `Read from the app itself: ${a.endpoints.length} thing${a.endpoints.length === 1 ? "" : "s"} it can do that other apps and Autopilot can use, with nothing for its author to add.` }))
+  const io = (f) => `${f.label || f.name || "input"}${f.file ? " (file)" : ""}${f.default != null ? ` = ${f.default}` : ""}`
+  const list = el("ol", { class: "timeline" }, ...a.endpoints.slice(0, 12).map((e) => el("li", {},
+    el("b", { text: e.name.replace(/^\//, "") }),
+    el("small", { text: `${e.inputs.map(io).join(", ") || "no inputs"} → ${e.outputs.map(io).join(", ") || "nothing"}` }))))
+  box.appendChild(list)
+  if (a.endpoints.length > 12) box.appendChild(el("p", { class: "note", text: `And ${a.endpoints.length - 12} more.` }))
+  return box
+}
+
 // The app's own logo when it has one (from its folder or its GitHub repo), else its first letter
 const icons = new Map()
 function mark(name, app) {
@@ -507,6 +526,9 @@ const views = {
       try { go(appHash(await ask("copy", id))) } catch (err) { fail(err) }
     }
 
+    // while it runs: what it offers as an API
+    const apiBox = r?.url && r.script !== "install.js" ? el("div", { class: "changes app-api" }, el("h2", { text: "What it can do" }), el("p", { class: "note", text: "Asking the app…" })) : null
+    if (apiBox) ask("appApi", id).then((a) => apiBox.replaceWith(apiList(a))).catch((err) => apiBox.replaceChildren(el("h2", { text: "What it can do" }), el("p", { class: "note", text: err.message })))
     const changes = el("div", { class: "changes" }, el("h2", { text: "What's changed" }), el("p", { class: "note", text: "Getting its latest updates…" }))
     ask("changes", id).then((c) => changes.replaceWith(changesList(c))).catch((err) => changes.replaceChildren(el("h2", { text: "What's changed" }), el("p", { class: "note", text: err.message })))
 
@@ -578,6 +600,7 @@ const views = {
           el("div", { class: "term" },
             el("div", { class: "term-h" }, el("i"), el("i"), el("i"), el("span", { text: "log" })),
             logBody),
+          apiBox,
           changes)),
     ]
   },
