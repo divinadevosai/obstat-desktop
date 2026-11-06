@@ -279,3 +279,5 @@ a.post:hover{border-color:var(--acc)}
 .pilot.recipe h3 { margin: 0; font-size: 1.05em; }
 .recipe-field { display: grid; gap: 4px; }
 .recipe-field input, .recipe-field textarea { width: 100%; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line, rgba(255,255,255,.18)); background: transparent; color: inherit; resize: vertical; }
+.pilot-log li.receipt ul { margin: 6px 0; padding-left: 18px; }
+.pilot-log li.receipt ul li { font-size: .92em; opacity: .9; }

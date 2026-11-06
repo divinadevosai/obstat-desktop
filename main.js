@@ -76,6 +76,7 @@ const autopilot = autopilotLib.create({
   emit: (e) => toWindow(e),
   apps: {
     list: () => apps.list(),
+    dirOf: (id) => apps.appDir(id),
     ensureRunning: async (id, note) => {
       const a = apps.get(id)
       if (a?.running?.url) return a.running.url

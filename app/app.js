@@ -1857,7 +1857,22 @@ function pilotLine(e) {
   if (e.type === "file") return el("li", {}, el("b", { text: "Made " }), el("button", { class: "link", text: e.file.split(/[\\/]/).pop(), onclick: () => ask("autopilotOpen", e.file).catch(() => {}) }), el("small", { text: ` by ${e.app}` }))
   if (e.type === "done") return el("li", { class: "ok-note" }, el("span", { text: e.text || "Finished." }), " ", el("button", { class: "link", text: "Open the folder", onclick: () => ask("autopilotOpen", e.dir).catch(() => {}) }))
   if (e.type === "error") return el("li", { class: "err", text: `Stopped: ${e.text}` })
+  if (e.type === "receipt") return receiptLine(e)
   return null
+}
+// the run's privacy receipt (lib/receipt.js): what ran, what went where
+function receiptLine(e) {
+  const r = e.receipt
+  const away = r.network.connections
+  const host = (c) => `${c.address.includes(":") ? `[${c.address}]` : c.address}:${c.port}`
+  return el("li", { class: `receipt ${r.network.couldNotLook ? "" : away.length ? "err" : "ok-note"}` },
+    el("b", { text: "Receipt " }), el("span", { text: r.summary }),
+    el("ul", {},
+      el("li", { text: `Planning: ${r.planner.sent}${r.planner.kind === "claude" ? ` Sent to ${r.planner.sentTo}.` : ""}` }),
+      el("li", { text: `Apps: ${r.apps.length ? r.apps.map((a) => `${a.name}${a.commit ? ` @ ${String(a.commit).slice(0, 7)}` : ""}`).join(", ") : "none ran"}` }),
+      el("li", { text: `Files: ${r.files.in.length} in, ${r.files.out.length} out, each with its SHA-256 in the receipt.` }),
+      ...away.map((c) => el("li", { text: `${c.appName} connected to ${host(c)}` }))),
+    el("button", { class: "link", text: "Open the receipt", onclick: () => ask("autopilotOpen", e.file).catch(() => {}) }))
 }
 function pilotEvent(e) {
   pilot.events.push(e)
