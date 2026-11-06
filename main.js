@@ -1,5 +1,5 @@
 // Obstat Desktop: the window, and the few things it's allowed to ask for.
-const { app, BrowserWindow, ipcMain, net, protocol, safeStorage, session, shell } = require("electron")
+const { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, session, shell } = require("electron")
 const path = require("node:path")
 const { pathToFileURL } = require("node:url")
 const api = require("./lib/api")
@@ -20,6 +20,7 @@ const winSandboxLib = require("./lib/winsandbox")
 const divinaLib = require("./lib/divina")
 const usageLib = require("./lib/usage")
 const appApi = require("./lib/appapi")
+const autopilotLib = require("./lib/autopilot")
 const wallsLib = require("./lib/walls")
 const { sandboxEnv } = require("./lib/confine")
 const deeplink = require("./lib/deeplink")
@@ -67,6 +68,25 @@ const crypt = {
   hint: () => (process.platform === "linux" ? "Obstat uses your desktop's keyring to encrypt them: install GNOME Keyring or KWallet (most desktops have one), sign out and back in, then try again." : ""),
 }
 const keys = keysLib.create(home, crypt)
+// Autopilot (lib/autopilot.js): uses the user's installed apps to do what they ask,
+// starting an app when a plan needs it
+const autopilot = autopilotLib.create({
+  home, keys,
+  emit: (e) => toWindow(e),
+  apps: {
+    list: () => apps.list(),
+    ensureRunning: async (id, note) => {
+      const a = apps.get(id)
+      if (a?.running?.url) return a.running.url
+      if (a?.running) throw new Error(`${a.name} is busy (${a.running.script}). Try again when it's done.`)
+      note(`Starting ${a?.name || id}…`)
+      const r = await apps.run(id, "start.js")
+      const url = apps.get(id)?.running?.url
+      if (!r.ok || !url) throw new Error(`${a?.name || id} didn't start${r.error ? `: ${r.error}` : "."}`)
+      return url
+    },
+  },
+})
 const account = accountLib.create(home, crypt)
 const icons = iconsLib.create(home.dir("cache"), (url, opts) => net.fetch(url, opts))
 
@@ -353,7 +373,32 @@ app.whenReady().then(() => shellPath).then(() => {
     if (typeof id !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(id)) throw new Error("That isn't an app id.")
     const url = apps.get(id)?.running?.url
     if (!url) return { kind: null, reason: "Start the app to see what it offers." }
-    return appApi.discover(url)
+    const found = await appApi.discover(url)
+    autopilot.remember(id, found)
+    return found
+  })
+  // Autopilot
+  handle("autopilot-status", async () => ({ ...(await autopilot.status()), apps: (await autopilot.usable()).map((a) => a.name) }))
+  handle("autopilot-start", async (goal, files) => {
+    // files the user picked in Obstat's own file dialog (autopilot-pick), nothing else
+    const ok = Array.isArray(files) ? files.filter((f) => typeof f === "string" && picked.has(f)) : []
+    return autopilot.start({ goal, files: ok })
+  })
+  handle("autopilot-stop", () => autopilot.stop())
+  const picked = new Set()
+  handle("autopilot-pick", async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ["openFile", "multiSelections"] })
+    for (const f of r.filePaths) picked.add(f)
+    return r.canceled ? [] : r.filePaths
+  })
+  // the key Autopilot uses, kept in Keys like any other (shared only with Autopilot)
+  handle("autopilot-key", (value) => keys.add({ name: "AUTOPILOT_ANTHROPIC_KEY", value, apps: ["obstat/autopilot"] }))
+  // open what a run made: only inside Obstat's autopilot folder
+  handle("autopilot-open", (file) => {
+    const root = home.dir("autopilot")
+    const p = path.resolve(String(file || ""))
+    if (p !== root && !p.startsWith(root + path.sep)) throw new Error("That isn't something Autopilot made.")
+    return shell.openPath(p)
   })
   handle("app-changes", async (id) => {
     if (typeof id !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(id)) throw new Error("That isn't an app id.")
