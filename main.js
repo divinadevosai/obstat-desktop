@@ -21,6 +21,7 @@ const divinaLib = require("./lib/divina")
 const usageLib = require("./lib/usage")
 const appApi = require("./lib/appapi")
 const autopilotLib = require("./lib/autopilot")
+const recipesLib = require("./lib/recipes")
 const wallsLib = require("./lib/walls")
 const { sandboxEnv } = require("./lib/confine")
 const deeplink = require("./lib/deeplink")
@@ -87,6 +88,7 @@ const autopilot = autopilotLib.create({
     },
   },
 })
+const recipes = recipesLib.create(home)
 const account = accountLib.create(home, crypt)
 const icons = iconsLib.create(home.dir("cache"), (url, opts) => net.fetch(url, opts))
 
@@ -381,8 +383,7 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("autopilot-status", async () => ({ ...(await autopilot.status()), apps: (await autopilot.usable()).map((a) => a.name) }))
   handle("autopilot-start", async (goal, files) => {
     // files the user picked in Obstat's own file dialog (autopilot-pick), nothing else
-    const ok = Array.isArray(files) ? files.filter((f) => typeof f === "string" && picked.has(f)) : []
-    return autopilot.start({ goal, files: ok })
+    return autopilot.start({ goal, files: okFiles(files) })
   })
   handle("autopilot-stop", () => autopilot.stop())
   const picked = new Set()
@@ -393,6 +394,24 @@ app.whenReady().then(() => shellPath).then(() => {
   })
   // the key Autopilot uses, kept in Keys like any other (shared only with Autopilot)
   handle("autopilot-key", (value) => keys.add({ name: "AUTOPILOT_ANTHROPIC_KEY", value, apps: ["obstat/autopilot"] }))
+  // Recipes (lib/recipes.js): a run that worked, kept and run again with no planner
+  const okFiles = (files) => (Array.isArray(files) ? files.filter((f) => typeof f === "string" && picked.has(f)) : [])
+  handle("recipes-list", () => recipes.list())
+  handle("recipe-keep", (name) => recipes.save(autopilot.recipeFromLast(name)))
+  handle("recipe-run", (id, files, values) => autopilot.replay(recipes.get(id), { files: okFiles(files), values: values && typeof values === "object" ? values : {} }))
+  handle("recipe-delete", (id) => recipes.remove(id))
+  handle("recipe-export", async (id) => {
+    const text = recipes.exportText(id)
+    const r = await dialog.showSaveDialog(win, { defaultPath: `${id}.obstat-recipe.json`, filters: [{ name: "Obstat recipe", extensions: ["json"] }] })
+    if (r.canceled || !r.filePath) return null
+    fs.writeFileSync(r.filePath, text)
+    return r.filePath
+  })
+  handle("recipe-import", async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ["openFile"], filters: [{ name: "Obstat recipe", extensions: ["json"] }] })
+    if (r.canceled || !r.filePaths[0]) return null
+    return recipes.importFile(r.filePaths[0])
+  })
   // open what a run made: only inside Obstat's autopilot folder
   handle("autopilot-open", (file) => {
     const root = home.dir("autopilot")
