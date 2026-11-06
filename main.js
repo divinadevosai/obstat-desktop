@@ -78,6 +78,7 @@ const autopilot = autopilotLib.create({
   apps: {
     list: () => apps.list(),
     dirOf: (id) => apps.appDir(id),
+    rootPid: (id) => apps.rootPid(id),
     ensureRunning: async (id, note) => {
       const a = apps.get(id)
       if (a?.running?.url) return a.running.url
@@ -430,7 +431,14 @@ app.whenReady().then(() => shellPath).then(() => {
   const okFiles = (files) => (Array.isArray(files) ? files.filter((f) => typeof f === "string" && picked.has(f)) : [])
   handle("recipes-list", () => recipes.list())
   handle("recipe-keep", (name) => recipes.save(autopilot.recipeFromLast(name)))
-  handle("recipe-run", (id, files, values) => autopilot.replay(recipes.get(id), { files: okFiles(files), values: values && typeof values === "object" ? values : {} }))
+  handle("recipe-run", (id, files, values, looked) => {
+    const r = recipes.get(id)
+    // a recipe from someone else runs once the person has looked at its steps
+    if (r.imported && looked !== true) throw new Error("Look at this recipe's steps first.")
+    if (r.imported) recipes.trust(id)
+    const slots = Array.isArray(files) ? files.map((f) => (typeof f === "string" && picked.has(f) ? f : null)) : []
+    return autopilot.replay(r, { files: slots, values: values && typeof values === "object" ? values : {} })
+  })
   handle("recipe-delete", (id) => recipes.remove(id))
   handle("recipe-export", async (id) => {
     const text = recipes.exportText(id)
@@ -449,6 +457,8 @@ app.whenReady().then(() => shellPath).then(() => {
     const root = home.dir("autopilot")
     const p = path.resolve(String(file || ""))
     if (p !== root && !p.startsWith(root + path.sep)) throw new Error("That isn't something Autopilot made.")
+    // an app's output is opened, never run: a program or script it made is shown in its folder
+    if (/\.(exe|com|bat|cmd|ps1|psm1|vbs|vbe|js|jse|jar|wsf|wsh|hta|msi|msix|msp|scr|pif|cpl|lnk|url|reg|dll|sh|command|app|pkg|dmg|desktop|appimage|py|pyw)$/i.test(p)) return shell.showItemInFolder(p)
     return shell.openPath(p)
   })
   handle("app-changes", async (id) => {

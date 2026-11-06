@@ -1897,11 +1897,11 @@ function receiptLine(e) {
 }
 function pilotEvent(e) {
   pilot.events.push(e)
-  if (e.type === "start") pilot.kept = false
+  if (e.type === "start") { pilot.kept = false; pilot.running = true }
   if (e.type === "done" || e.type === "error") pilot.running = false
   const line = pilotLine(e)
   if (pilotLog && line) { pilotLog.appendChild(line); pilotLog.scrollTop = pilotLog.scrollHeight }
-  if ((e.type === "done" || e.type === "error") && location.hash.startsWith("#/autopilot")) render()
+  if ((e.type === "start" || e.type === "done" || e.type === "error") && location.hash.startsWith("#/autopilot")) render()
 }
 
 async function autopilotView() {
@@ -1978,6 +1978,8 @@ function recipeCard(r) {
   const values = {}
   const note = el("p", { class: "note" })
   const chain = r.steps.map((s) => s.appName).filter((n, i, a) => a[i - 1] !== n).join(" → ")
+  const shown = (v) => (v.file ? ("input" in v.file ? `your file “${r.files[v.file.input]?.label || "file"}”` : `what step ${v.file.step + 1} made`) : JSON.stringify(v.value).slice(0, 120))
+  const steps = r.steps.map((s, i) => `${i + 1}. ${s.appName}: ${s.action.replace(/^\//, "")} (${s.inputs.map((v) => `${v.label || "input"}: ${shown(v)}`).join("; ").slice(0, 400)})`)
   const pickers = r.files.map((f, i) => {
     const shown = el("small", { text: " not chosen" })
     return el("div", { class: "row-btns" }, el("button", { class: "btn small ghost", text: `Choose ${f.label}`, onclick: async () => {
@@ -1995,13 +1997,16 @@ function recipeCard(r) {
   }))
   return el("div", { class: "pilot recipe" },
     el("h3", { text: r.name }),
+    r.imported ? el("div", { class: "note err" }, el("b", { text: "From someone else. " }), "Check what it does before you run it:", el("ol", {}, ...steps.map((t) => el("li", { text: t.replace(/^\d+\. /, "") })))) : null,
     el("p", { class: "note", text: `${chain}${r.about && r.about !== r.name ? `. Made from: “${r.about.slice(0, 160)}”` : ""}` }),
     ...pickers, ...fields,
     el("div", { class: "row-btns" },
       el("button", { class: "btn small", text: "Run", disabled: pilot.running, onclick: async () => {
         if (files.some((f) => !f)) { note.textContent = `Choose ${r.files.filter((_, i) => !files[i]).map((f) => f.label).join(", ")} first.`; return }
+        // someone else's recipe: what it will do, before it first runs
+        if (r.imported && !confirm(`“${r.name}” came from someone else. It will:\n\n${steps.join("\n")}\n\nRun it?`)) return
         pilot.running = true; pilot.events = []; if (pilotLog) pilotLog.replaceChildren(); note.textContent = ""
-        try { await ask("recipeRun", r.id, files, values) } catch (err) { note.textContent = err.message; pilot.running = false }
+        try { await ask("recipeRun", r.id, files, values, !!r.imported) } catch (err) { note.textContent = err.message; pilot.running = false }
       } }),
       el("button", { class: "btn small ghost", text: "Export", onclick: async () => {
         try { const p = await ask("recipeExport", r.id); if (p) note.textContent = `Saved to ${p}. Anyone with Obstat and these apps can import it.` } catch (err) { note.textContent = err.message }

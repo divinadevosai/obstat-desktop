@@ -187,7 +187,7 @@ async function main() {
         say(`receipt: ${seen.looks} look${seen.looks === 1 ? "" : "s"} at its connections${seen.failed ? ` (${seen.failed} failed)` : ""}; outside this computer: ${seen.connections.length ? seen.connections.map((c) => `${c.address}:${c.port}`).join(", ") : "none"}`)
         if (!seen.looks) fail("the receipt couldn't look at the app's connections")
         const files = []
-        for (const v of out) if (v && v.file) files.push(await appapi.save(v.fileUrl, path.join(OUT, "api-call"), v.name ? path.basename(v.name) : "output"))
+        for (const v of out) if (v && v.file) files.push(await appapi.save(appApi, v.fileUrl, path.join(OUT, "api-call"), v.name ? path.basename(v.name) : "output"))
         const sizes = files.map((f) => `${path.basename(f)} (${fs.statSync(f).size} bytes)`)
         if (!files.length || files.some((f) => fs.statSync(f).size === 0)) fail(`calling ${ep.name} made no file: ${JSON.stringify(out).slice(0, 300)}`)
         else say(`called ${ep.name} through its API and kept ${sizes.join(", ")}`)

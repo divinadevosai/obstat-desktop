@@ -291,7 +291,7 @@ test("every run and every recipe run leaves a receipt: apps, steps, files and wh
   const s = await setup()
   try {
     // the stand-in apps "connect" somewhere: Kokoro's process reaches 8.8.8.8
-    const look = async () => ({ conns: [{ pid: 5, address: "8.8.8.8", port: 443 }], who: { 5: "/apps/kokoro/env/bin/python\n" } })
+    const look = async () => ({ conns: [{ pid: 5, address: "8.8.8.8", port: 443 }], procs: new Map([[5, { ppid: 0, who: "/apps/kokoro/env/bin/python\n" }]]) })
     const receipts = { ...receiptLib, watch: (apps) => receiptLib.watch(apps, { look, every: 5 }) }
     const claude = scriptedClaude([
       () => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "kokoro_tts__generate_speech", input: { text: "Hi" } }] }),
@@ -310,7 +310,7 @@ test("every run and every recipe run leaves a receipt: apps, steps, files and wh
     assert.equal(onDisk.files.out.length, 1)
     assert.equal(onDisk.files.out[0].sha256.length, 64)
     assert.deepEqual(onDisk.network.connections.map((c) => [c.appName, c.address]), [["Kokoro TTS", "8.8.8.8"]])
-    assert.match(onDisk.summary, /connected to 1 address/)
+    assert.match(onDisk.summary, /connected to 1 internet address/)
     assert.ok(s.events.some((e) => e.type === "receipt"), "the receipt is shown")
     assert.ok(!r.files.some((f) => f.endsWith("receipt.json")), "the receipt isn't one of the things the run made")
 
@@ -413,4 +413,115 @@ test("a recipe that needs a reviewed app asks to install it; one that isn't revi
     await assert.rejects(autopilotLib.create({ home: s.h, keys: s.keys, apps: unlisted.apps, ...unlisted.deps }).replay(recipe, { files: [mine] }), /Echo FX, which isn't installed\. Install it from Discover first/)
     assert.deepEqual(unlisted.asked, [])
   } finally { s.close(); fs.rmSync(mine, { force: true }) }
+})
+
+// ---------- audit fixes ----------
+const appapi = require("../lib/appapi")
+
+test("a text input that names a place on this computer is refused, whoever wrote it", async () => {
+  const s = await setup()
+  try {
+    const claude = scriptedClaude([
+      () => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "kokoro_tts__generate_speech", input: { text: process.platform === "win32" ? "C:\\Windows\\win.ini" : "/etc/hosts" } }] }),
+      (req) => ({ stop_reason: "end_turn", content: [{ type: "text", text: req.messages.at(-1).content[0].is_error ? `refused: ${req.messages.at(-1).content[0].content}` : "sent" }] }),
+    ])
+    const pilot = autopilotLib.create({ home: s.h, keys: s.keys, apps: { list: () => s.list, ensureRunning: async (id) => s.list.find((a) => a.id === id).running.url }, plannerClaude: { MODEL: "m", plan: (o) => require("../lib/planner-claude").plan({ ...o, client: claude }) } })
+    const r = await pilot.start({ goal: "read it" })
+    assert.match(r.text, /refused: .*is a place on this computer/)
+    // a recipe someone shared, the same
+    const recipe = recipesLib.check({ obstatRecipe: 1, name: "x", steps: [{ app: "a/kokoro", appName: "Kokoro TTS", action: "/generate_speech", inputs: [{ label: "Text", value: "~/.ssh/id_rsa", edit: true }] }] })
+    await assert.rejects(pilot.replay(recipe), /is a place on this computer/)
+    // ordinary text that mentions a path is fine
+    const ok = await pilot.replay({ ...recipe, steps: [{ ...recipe.steps[0], inputs: [{ label: "Text", value: "Read /etc/hosts aloud" }] }] })
+    assert.equal(ok.files.length, 1)
+  } finally { s.close() }
+})
+
+test("only one run at a time, even when two start together; Stop ends a recipe's install wait", async () => {
+  const s = await setup()
+  try {
+    let release
+    const slow = { MODEL: "m", plan: () => new Promise((r) => { release = () => r({ text: "ok" }) }) }
+    const pilot = autopilotLib.create({ home: s.h, keys: s.keys, apps: { list: () => s.list, ensureRunning: async () => null }, plannerClaude: slow })
+    const first = pilot.start({ goal: "a" })
+    await assert.rejects(pilot.start({ goal: "b" }), /already working/)
+    await new Promise((r) => setImmediate(r))
+    while (!release) await new Promise((r) => setTimeout(r, 5))
+    release()
+    await first
+
+    // a recipe waiting on "install this?" stops when Stop is pressed
+    s.list[1].installed = false
+    let seen
+    const waiting = autopilotLib.create({
+      home: s.h, keys: s.keys, catalog: async () => [{ id: "b/fx", name: "Echo FX" }],
+      confirm: (q, signal) => new Promise((resolve) => { seen = signal; signal.addEventListener("abort", () => resolve(false)) }),
+      apps: { list: () => s.list, ensureRunning: async () => null, install: async () => {} },
+    })
+    const recipe = recipesLib.check({ obstatRecipe: 1, name: "fx", steps: [{ app: "b/fx", appName: "Echo FX", action: "/add_echo", inputs: [] }] })
+    const run = waiting.replay(recipe)
+    while (!seen) await new Promise((r) => setTimeout(r, 5))
+    waiting.stop()
+    await assert.rejects(run, /weren't installed/)
+  } finally { s.close() }
+})
+
+test("a recipe's files keep their places: one not given leaves its slot empty", async () => {
+  const s = await setup()
+  const f = path.join(os.tmpdir(), `obstat-slot-${process.pid}.wav`)
+  fs.writeFileSync(f, "RIFF")
+  try {
+    const recipe = recipesLib.check({ obstatRecipe: 1, name: "two", files: [{ label: "first" }, { label: "second" }], steps: [{ app: "b/fx", appName: "Echo FX", action: "/add_echo", inputs: [{ label: "a", file: { input: 1 } }] }] })
+    const pilot = autopilotLib.create({ home: s.h, keys: s.keys, apps: { list: () => s.list, ensureRunning: async (id) => s.list.find((a) => a.id === id).running.url } })
+    await assert.rejects(pilot.replay(recipe, { files: [null, f] }), /needs 2 files/)
+  } finally { s.close(); fs.rmSync(f, { force: true }) }
+})
+
+test("an app's output is saved only from that app, as it streams, within the size limit", async () => {
+  const s = await setup()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "obstat-save-"))
+  try {
+    const api = await appapi.discover(`http://127.0.0.1:${s.tts.address().port}`)
+    const other = `http://127.0.0.1:${s.fx.address().port}/gradio_api/file=/tmp/gradio/echo.wav`
+    await assert.rejects(appapi.save(api, other, dir, "x"), /only saves files from the app that made them/)
+    await assert.rejects(appapi.save(api, "http://example.com/x", dir, "x"), /only saves files from the app/)
+    // the app made a file; it's saved, and refused when over the limit (nothing left behind)
+    await appapi.call(api, "/generate_speech", ["Hello", "af_heart"])
+    const url = `${api.url}/gradio_api/file=/tmp/gradio/speech.wav`
+    const saved = await appapi.save(api, url, dir, "speech.wav")
+    assert.equal(fs.readFileSync(saved, "utf8"), "RIFF af_heart Hello")
+    await assert.rejects(appapi.save(api, url, dir, "big.wav", { maxBytes: 4 }), /too big/)
+    assert.ok(!fs.existsSync(path.join(dir, "big.wav")))
+    // an endpoint name can't step out of the app's API
+    assert.deepEqual(appapi.endpoints({ named_endpoints: { "/../admin": {}, "/ok": {} } }).map((e) => e.name), ["/ok"])
+  } finally { s.close(); fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test("a recipe from someone else is marked until it has been looked at, and its export drops the mark", () => {
+  const h = homeLib.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-imported-"))); h.ensure()
+  try {
+    const store = recipesLib.create(h)
+    const file = path.join(h.root, "in.json")
+    fs.writeFileSync(file, JSON.stringify({ obstatRecipe: 1, name: "Theirs", imported: false, steps: [{ app: "a/b", appName: "B", action: "/go", inputs: [] }] }))
+    const r = store.importFile(file)
+    assert.equal(store.get(r.id).imported, true)
+    assert.equal(store.list()[0].imported, true)
+    assert.equal("imported" in JSON.parse(store.exportText(r.id)), false)
+    store.trust(r.id)
+    assert.equal(store.get(r.id).imported, undefined)
+    // what someone writes in their file can't mark their own recipe as already trusted
+    const mine = store.save({ obstatRecipe: 1, name: "Mine", steps: [{ app: "a/b", appName: "B", action: "/go", inputs: [] }] })
+    assert.equal(store.get(mine.id).imported, undefined)
+  } finally { fs.rmSync(h.root, { recursive: true, force: true }) }
+})
+
+test("Ollama: models that can use tools come first, and its own error is passed on", async () => {
+  const ollama = require("../lib/planner-ollama")
+  const fetchImpl = async (url, opts) => {
+    if (url.endsWith("/api/tags")) return new Response(JSON.stringify({ models: [{ name: "llama2" }, { name: "qwen3" }, { name: "old" }] }))
+    if (url.endsWith("/api/show")) { const m = JSON.parse(opts.body).model; return m === "old" ? new Response("{}", { status: 404 }) : new Response(JSON.stringify({ capabilities: m === "qwen3" ? ["completion", "tools"] : ["completion"] })) }
+    if (url.endsWith("/api/chat")) return new Response(JSON.stringify({ error: "llama2 does not support tools" }), { status: 400 })
+  }
+  assert.deepEqual(await ollama.models({ fetchImpl }), ["qwen3", "old", "llama2"])
+  await assert.rejects(ollama.plan({ model: "llama2", goal: "x", system: "s", tools: [], fetchImpl }), /llama2 does not support tools.*needs a model that can use tools/)
 })
