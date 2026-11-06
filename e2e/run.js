@@ -179,14 +179,19 @@ async function main() {
     const ep = appApi.endpoints.find((e) => e.name === spec.call.endpoint)
     if (!ep) fail(`its API has no ${spec.call.endpoint}`)
     else {
+      // what a privacy receipt (lib/receipt.js) sees the app connect to during the call
+      const watcher = require("../lib/receipt").watch([{ id, name, dir }])
       try {
         const out = await appapi.call(appApi, ep.name, ep.inputs.map((f) => (f.name in spec.call.input ? spec.call.input[f.name] : f.default ?? null)))
+        const seen = await watcher.stop()
+        say(`receipt: ${seen.looks} look${seen.looks === 1 ? "" : "s"} at its connections${seen.failed ? ` (${seen.failed} failed)` : ""}; outside this computer: ${seen.connections.length ? seen.connections.map((c) => `${c.address}:${c.port}`).join(", ") : "none"}`)
+        if (!seen.looks) fail("the receipt couldn't look at the app's connections")
         const files = []
         for (const v of out) if (v && v.file) files.push(await appapi.save(v.fileUrl, path.join(OUT, "api-call"), v.name ? path.basename(v.name) : "output"))
         const sizes = files.map((f) => `${path.basename(f)} (${fs.statSync(f).size} bytes)`)
         if (!files.length || files.some((f) => fs.statSync(f).size === 0)) fail(`calling ${ep.name} made no file: ${JSON.stringify(out).slice(0, 300)}`)
         else say(`called ${ep.name} through its API and kept ${sizes.join(", ")}`)
-      } catch (err) { fail(`calling ${ep.name} through its API: ${err.message}`) }
+      } catch (err) { await watcher.stop(); fail(`calling ${ep.name} through its API: ${err.message}`) }
     }
   }
 

@@ -283,3 +283,50 @@ test("a shared recipe is checked before it's kept: only apps, actions, plain val
     assert.throws(() => store.get("../../x"), /isn't a recipe/)
   } finally { fs.rmSync(h.root, { recursive: true, force: true }) }
 })
+
+// ---------- privacy receipts (lib/receipt.js) on runs ----------
+const receiptLib = require("../lib/receipt")
+
+test("every run and every recipe run leaves a receipt: apps, steps, files and what went where", async () => {
+  const s = await setup()
+  try {
+    // the stand-in apps "connect" somewhere: Kokoro's process reaches 8.8.8.8
+    const look = async () => ({ conns: [{ pid: 5, address: "8.8.8.8", port: 443 }], who: { 5: "/apps/kokoro/env/bin/python\n" } })
+    const receipts = { ...receiptLib, watch: (apps) => receiptLib.watch(apps, { look, every: 5 }) }
+    const claude = scriptedClaude([
+      () => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "kokoro_tts__generate_speech", input: { text: "Hi" } }] }),
+      () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] }),
+    ])
+    const deps = { home: s.h, keys: s.keys, receipts, emit: (e) => s.events.push(e), apps: { list: () => s.list.map((a) => ({ ...a, commit: "abc1234def" })), dirOf: (id) => (id === "a/kokoro" ? "/apps/kokoro" : "/apps/fx"), ensureRunning: async (id) => s.list.find((a) => a.id === id).running.url } }
+    const pilot = autopilotLib.create({ ...deps, plannerClaude: { MODEL: "m", plan: (o) => require("../lib/planner-claude").plan({ ...o, client: claude }) } })
+    const r = await pilot.start({ goal: "Say hi" })
+    const onDisk = JSON.parse(fs.readFileSync(path.join(r.dir, "receipt.json"), "utf8"))
+    assert.deepEqual(onDisk, r.receipt)
+    assert.equal(onDisk.kind, "autopilot")
+    assert.equal(onDisk.goal, "Say hi")
+    assert.equal(onDisk.planner.kind, "claude")
+    assert.deepEqual(onDisk.apps, [{ id: "a/kokoro", name: "Kokoro TTS", commit: "abc1234def", reviewed: false }])
+    assert.deepEqual(onDisk.steps, [{ app: "a/kokoro", action: "/generate_speech", ok: true }])
+    assert.equal(onDisk.files.out.length, 1)
+    assert.equal(onDisk.files.out[0].sha256.length, 64)
+    assert.deepEqual(onDisk.network.connections.map((c) => [c.appName, c.address]), [["Kokoro TTS", "8.8.8.8"]])
+    assert.match(onDisk.summary, /connected to 1 address/)
+    assert.ok(s.events.some((e) => e.type === "receipt"), "the receipt is shown")
+    assert.ok(!r.files.some((f) => f.endsWith("receipt.json")), "the receipt isn't one of the things the run made")
+
+    // the recipe from it: a receipt too, with no planner
+    const recipe = recipesLib.create(s.h).save(pilot.recipeFromLast("Hi"))
+    const again = await pilot.replay(recipe)
+    assert.equal(again.receipt.kind, "recipe")
+    assert.equal(again.receipt.planner.sentTo, "nowhere")
+
+    // a run that fails still leaves one, saying what failed
+    s.tts.close()
+    const failing = autopilotLib.create({ ...deps, plannerClaude: noPlanner })
+    await assert.rejects(failing.replay(recipe))
+    const dirs = fs.readdirSync(s.h.dir("autopilot")).sort()
+    const last = JSON.parse(fs.readFileSync(path.join(s.h.dir("autopilot"), dirs.at(-1), "receipt.json"), "utf8"))
+    assert.equal(last.ok, false)
+    assert.equal(last.steps[0].ok, false)
+  } finally { s.close() }
+})
