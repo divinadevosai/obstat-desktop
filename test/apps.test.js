@@ -389,7 +389,7 @@ test("on Windows, Stop sweeps the app's tree and port from Obstat, not only from
   shells.push(...JSON.parse(fs.readFileSync(path.join(h.root, "apps-running.json"), "utf8"))[id])
   assert.equal(a.stop(id), true)
   const logFile = path.join(h.dir("logs"), "obstat.log")
-  for (let i = 0; i < 100 && !(fs.existsSync(logFile) && /Stop:/.test(fs.readFileSync(logFile, "utf8"))); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 100 && !(fs.existsSync(logFile) && /Stop: taskkill/.test(fs.readFileSync(logFile, "utf8"))); i++) await new Promise((r) => setTimeout(r, 100))
   const log = fs.readFileSync(logFile, "utf8")
   assert.match(log, new RegExp(`${id}: Stop: taskkill /T ended 1 shell .*port ${port} still answered after that: ended 1 process holding it`))
   assert.ok(w.calls.some((c) => c.join(" ") === `taskkill /pid ${shells[0]} /T /F`))
