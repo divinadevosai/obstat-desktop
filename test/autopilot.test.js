@@ -183,3 +183,103 @@ test("a local model through Ollama plans the same way", async () => {
     assert.equal(r.files.length, 1)
   } finally { s.close() }
 })
+
+// ---------- recipes (lib/recipes.js): a run kept, and run again with no planner ----------
+const recipesLib = require("../lib/recipes")
+const noPlanner = { MODEL: "none", plan: () => { throw new Error("a recipe must not plan") } }
+
+test("a run that worked becomes a recipe, and runs again with no planner and changed text", async () => {
+  const s = await setup()
+  try {
+    const claude = scriptedClaude([
+      () => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "kokoro_tts__generate_speech", input: { text: "Hello there", voice: "bm_george" } }] }),
+      (req) => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t2", name: "echo_fx__add_echo", input: { audio: JSON.parse(req.messages.at(-1).content[0].content)[0].Audio.file } }] }),
+      () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] }),
+    ])
+    const planner = { MODEL: "claude-opus-5-5", plan: (opts) => require("../lib/planner-claude").plan({ ...opts, client: claude }) }
+    const deps = { home: s.h, keys: s.keys, emit: (e) => s.events.push(e), apps: { list: () => s.list, ensureRunning: async (id) => s.list.find((a) => a.id === id).running.url } }
+    // a fresh Autopilot has nothing to keep yet
+    await assert.rejects(async () => autopilotLib.create({ ...deps, plannerClaude: planner }).recipeFromLast("x"), /no finished run/)
+    const store = recipesLib.create(s.h)
+    const ran = autopilotLib.create({ ...deps, plannerClaude: planner })
+    assert.equal((await ran.start({ goal: "Hello with echo" })).canKeep, true)
+    const kept = store.save(ran.recipeFromLast("Echoed hello"))
+    assert.equal(kept.id, "echoed-hello")
+    assert.deepEqual(kept.steps.map((x) => [x.app, x.action]), [["a/kokoro", "/generate_speech"], ["b/fx", "/add_echo"]])
+    assert.deepEqual(kept.steps[0].inputs[0], { label: "Text", value: "Hello there", edit: true })
+    assert.deepEqual(kept.steps[0].inputs[1], { label: "Voice", value: "bm_george" }, "a choice from a list stays as it was")
+    assert.deepEqual(kept.steps[1].inputs[0], { label: "Input audio", file: { step: 0, output: 0 } })
+    assert.equal(store.list().length, 1)
+
+    // run it again: no planner at all, the text changed, the second app given the first's new file
+    const before = s.fx.uploads.length
+    const again = autopilotLib.create({ ...deps, plannerClaude: noPlanner, plannerOllama: { models: async () => null, plan: noPlanner.plan } })
+    const out = await again.replay(store.get("echoed-hello"), { values: { "0.0": "Goodbye", "0.1": "ignored: not changeable" } })
+    assert.equal(out.files.length, 2)
+    assert.equal(fs.readFileSync(out.files.find((f) => f.endsWith("speech.wav")), "utf8"), "RIFF bm_george Goodbye")
+    assert.match(s.fx.uploads[before], /RIFF bm_george Goodbye/)
+    assert.equal(s.events.filter((e) => e.type === "start").at(-1).planner, "recipe")
+  } finally { s.close() }
+})
+
+test("a recipe made from a file asks for a file, and won't run without the apps it uses", async () => {
+  const s = await setup()
+  const mine = path.join(os.tmpdir(), `obstat-recipe-mine-${process.pid}.wav`)
+  fs.writeFileSync(mine, "RIFF mine")
+  const theirs = path.join(os.tmpdir(), `obstat-recipe-theirs-${process.pid}.wav`)
+  fs.writeFileSync(theirs, "RIFF theirs")
+  try {
+    const claude = scriptedClaude([
+      (req) => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "echo_fx__add_echo", input: { audio: /Files the user gave you: (\S+)/.exec(req.system)[1] } }] }),
+      () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] }),
+    ])
+    const deps = { home: s.h, keys: s.keys, apps: { list: () => s.list, ensureRunning: async (id) => s.list.find((a) => a.id === id).running.url } }
+    const pilot = autopilotLib.create({ ...deps, plannerClaude: { MODEL: "m", plan: (o) => require("../lib/planner-claude").plan({ ...o, client: claude }) } })
+    await pilot.start({ goal: "Echo my file", files: [mine] })
+    const r = recipesLib.create(s.h).save(pilot.recipeFromLast(""))
+    assert.equal(r.name, "Echo my file", "unnamed, it's named after what was asked")
+    assert.deepEqual(r.files, [{ label: path.basename(mine) }])
+    assert.deepEqual(r.steps[0].inputs[0].file, { input: 0 })
+
+    await assert.rejects(pilot.replay(r, {}), /needs 1 file/)
+    await pilot.replay(r, { files: [theirs] })
+    assert.match(s.fx.uploads.at(-1), /RIFF theirs/)
+
+    s.list[1].installed = false
+    await assert.rejects(pilot.replay(r, { files: [theirs] }), /uses Echo FX, which isn't installed/)
+  } finally { s.close(); fs.rmSync(mine, { force: true }); fs.rmSync(theirs, { force: true }) }
+})
+
+test("a shared recipe is checked before it's kept: only apps, actions, plain values and earlier steps", () => {
+  const ok = { obstatRecipe: 1, name: "Two steps", files: [{ label: "photo" }], steps: [
+    { app: "a/one", appName: "One", action: "/go", inputs: [{ label: "in", file: { input: 0 } }, { label: "t", value: "hi", edit: true }] },
+    { app: "b/two", appName: "Two", action: "/next", inputs: [{ label: "in", file: { step: 0, output: 1 } }] },
+  ] }
+  assert.equal(recipesLib.check(ok).steps.length, 2)
+  const bad = (change, why) => { const r = JSON.parse(JSON.stringify(ok)); change(r); assert.throws(() => recipesLib.check(r), why) }
+  bad((r) => { r.obstatRecipe = 2 }, /newer Obstat/)
+  bad((r) => { r.steps[0].app = "../../etc" }, /doesn't name an app/)
+  bad((r) => { r.steps[0].action = "/x; rm -rf" }, /doesn't name an action/)
+  bad((r) => { r.steps[0].inputs[0].file = { input: 1 } }, /isn't one you give/)
+  bad((r) => { r.steps[1].inputs[0].file = { step: 1, output: 0 } }, /isn't one you give/)
+  bad((r) => { r.steps[0].inputs[0].file = { path: "C:/Users/me/secret.txt" } }, /isn't one you give/)
+  bad((r) => { r.steps[0].inputs[1].value = { nested: "object" } }, /isn't a plain value/)
+  bad((r) => { r.steps = [] }, /1 to 20 steps/)
+  // unknown fields are dropped
+  assert.equal("run" in recipesLib.check({ ...ok, run: "evil()" }), false)
+
+  // export, then import on another computer
+  const h = homeLib.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-recipes-"))); h.ensure()
+  try {
+    const store = recipesLib.create(h)
+    const kept = store.save(ok)
+    const file = path.join(h.root, "shared.json")
+    fs.writeFileSync(file, store.exportText(kept.id))
+    const imported = store.importFile(file)
+    assert.equal(imported.id, "two-steps-2", "a recipe never overwrites another")
+    assert.deepEqual(store.get(imported.id).steps, kept.steps)
+    fs.writeFileSync(file, "not json")
+    assert.throws(() => store.importFile(file), /isn't a recipe/)
+    assert.throws(() => store.get("../../x"), /isn't a recipe/)
+  } finally { fs.rmSync(h.root, { recursive: true, force: true }) }
+})

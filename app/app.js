@@ -685,7 +685,7 @@ const views = {
   disk: async () => {
     const d = await ask("disk")
     const total = Object.values(d.used).reduce((a, b) => a + b, 0)
-    const label = { apps: "Installed apps", sandboxes: "Sandboxes", bin: "Python, Node, Git and uv", cache: "Downloads cache", logs: "Logs" }
+    const label = { apps: "Installed apps", sandboxes: "Sandboxes", bin: "Python, Node, Git and uv", cache: "Downloads cache", logs: "Logs", autopilot: "Autopilot runs", recipes: "Recipes" }
     return page("Disk space", "AI apps and their models can be large. See what each part uses and get space back.",
       el("div", { class: "stats" },
         el("div", {}, el("b", { text: bytes(total) }), el("span", { text: "used by Obstat" })),
@@ -1849,7 +1849,7 @@ const pilot = { running: false, events: [], files: [] }
 let pilotLog = null
 function pilotLine(e) {
   const short = (v) => { const t = typeof v === "string" ? v : JSON.stringify(v); return t.length > 300 ? `${t.slice(0, 300)}…` : t }
-  if (e.type === "start") return el("li", { class: "note" }, `Using ${e.planner === "claude" ? `Claude (${e.model})` : `${e.model} on this computer`} with ${e.apps.join(", ")}.`)
+  if (e.type === "start") return el("li", { class: "note" }, e.planner === "recipe" ? `Running the recipe “${e.model}” with ${e.apps.join(", ")}: no planner, the same steps as before.` : `Using ${e.planner === "claude" ? `Claude (${e.model})` : `${e.model} on this computer`} with ${e.apps.join(", ")}.`)
   if (e.type === "note") return el("li", { class: "note", text: e.text })
   if (e.type === "say") return el("li", {}, el("b", { text: "Plan " }), el("span", { text: short(e.text) }))
   if (e.type === "step") return el("li", {}, el("b", { text: "Running " }), el("code", { text: e.tool.replace("__", " · ") }), el("small", { text: ` ${short(e.input)}` }))
@@ -1861,6 +1861,7 @@ function pilotLine(e) {
 }
 function pilotEvent(e) {
   pilot.events.push(e)
+  if (e.type === "start") pilot.kept = false
   if (e.type === "done" || e.type === "error") pilot.running = false
   const line = pilotLine(e)
   if (pilotLog && line) { pilotLog.appendChild(line); pilotLog.scrollTop = pilotLog.scrollHeight }
@@ -1901,12 +1902,79 @@ async function autopilotView() {
       keyNote,
       el("p", { class: "note", text: "Or install Ollama (ollama.com) and pull a model that can use tools, like qwen3, to plan entirely on this computer." }))
 
+  // the run that just worked, kept as a recipe
+  const lastEv = pilot.events.at(-1)
+  let keep = null
+  if (lastEv?.type === "done" && lastEv.canKeep && !pilot.kept) {
+    const name = el("input", { type: "text", placeholder: "Name it, e.g. Podcast intro", "aria-label": "Recipe name", maxlength: "80" })
+    const note = el("p", { class: "note" })
+    keep = el("div", { class: "pilot keep" },
+      el("p", { class: "note", text: "That worked. Keep it as a recipe to run it again in one click, with no planner and nothing to pay for." }),
+      el("div", { class: "bar key-bar" }, name, el("button", { class: "btn small", text: "Keep as recipe", onclick: async () => {
+        try { await ask("recipeKeep", name.value); pilot.kept = true; render() } catch (err) { note.textContent = err.message }
+      } })),
+      note)
+  }
+
+  let list = []
+  try { list = await ask("recipesList") } catch {}
+  const recipeNote = el("p", { class: "note" })
+  const importBtn = el("button", { class: "btn small ghost", text: "Import a recipe", onclick: async () => {
+    try { const r = await ask("recipeImport"); if (r) render() } catch (err) { recipeNote.textContent = err.message }
+  } })
+
   return page("Autopilot", "Say what you want. Obstat picks the right apps on your computer and runs them, passing one app's result to the next.",
     setup,
     el("p", { class: "note", text: st.apps.length ? `Can use: ${st.apps.join(", ")}. Start another app once and Autopilot learns what it can do.` : "No app Autopilot can use yet. Start an installed app (Kokoro, Applio, RMBG…) once and Autopilot learns what it can do." }),
     el("div", { class: "pilot" }, goal, el("div", { class: "row-btns" }, attach, go, stop), fileList, status),
+    keep,
+    el("h2", { class: "group-h", text: "Recipes" }),
+    el("p", { class: "note", text: list.length ? "Runs that worked, kept. Each runs the same steps again on your apps: no planner, nothing leaves this computer." : "No recipes yet. When a run works, keep it here to run it again in one click, or import one someone shared." }),
+    ...list.map(recipeCard),
+    el("div", { class: "row-btns" }, importBtn), recipeNote,
     el("h2", { class: "group-h", text: "What it's doing" }),
     pilotLog)
+}
+
+// one recipe: the files it asks for, the text it used (changeable), and Run
+function recipeCard(r) {
+  const files = r.files.map(() => null)
+  const values = {}
+  const note = el("p", { class: "note" })
+  const chain = r.steps.map((s) => s.appName).filter((n, i, a) => a[i - 1] !== n).join(" → ")
+  const pickers = r.files.map((f, i) => {
+    const shown = el("small", { text: " not chosen" })
+    return el("div", { class: "row-btns" }, el("button", { class: "btn small ghost", text: `Choose ${f.label}`, onclick: async () => {
+      const got = await ask("autopilotPick")
+      if (got[0]) { files[i] = got[0]; shown.textContent = ` ${got[0].split(/[\\/]/).pop()}` }
+    } }), shown)
+  })
+  const fields = []
+  r.steps.forEach((s, i) => s.inputs.forEach((v, k) => {
+    if (!v.edit) return
+    const input = el(v.value.length > 80 ? "textarea" : "input", { type: "text", rows: "2", "aria-label": `${s.appName}: ${v.label || "text"}`, maxlength: "20000" })
+    input.value = v.value
+    input.oninput = () => { values[`${i}.${k}`] = input.value }
+    fields.push(el("label", { class: "recipe-field" }, el("small", { text: `${s.appName} · ${v.label || "text"}` }), input))
+  }))
+  return el("div", { class: "pilot recipe" },
+    el("h3", { text: r.name }),
+    el("p", { class: "note", text: `${chain}${r.about && r.about !== r.name ? `. Made from: “${r.about.slice(0, 160)}”` : ""}` }),
+    ...pickers, ...fields,
+    el("div", { class: "row-btns" },
+      el("button", { class: "btn small", text: "Run", disabled: pilot.running, onclick: async () => {
+        if (files.some((f) => !f)) { note.textContent = `Choose ${r.files.filter((_, i) => !files[i]).map((f) => f.label).join(", ")} first.`; return }
+        pilot.running = true; pilot.events = []; if (pilotLog) pilotLog.replaceChildren(); note.textContent = ""
+        try { await ask("recipeRun", r.id, files, values) } catch (err) { note.textContent = err.message; pilot.running = false }
+      } }),
+      el("button", { class: "btn small ghost", text: "Export", onclick: async () => {
+        try { const p = await ask("recipeExport", r.id); if (p) note.textContent = `Saved to ${p}. Anyone with Obstat and these apps can import it.` } catch (err) { note.textContent = err.message }
+      } }),
+      el("button", { class: "btn small ghost", text: "Delete", onclick: async () => {
+        if (!confirm(`Delete the recipe “${r.name}”?`)) return
+        await ask("recipeDelete", r.id); render()
+      } })),
+    note)
 }
 
 // ---------- live app events ----------
