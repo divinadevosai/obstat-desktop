@@ -770,6 +770,7 @@ const views = {
   },
 
   insights: () => insightsView(),
+  autopilot: () => autopilotView(),
   hub: (tag) => hubView(tag),
   post: (id) => postView(id),
   launches: (period) => launchesView(period),
@@ -1841,6 +1842,73 @@ async function keysBox() {
   return box
 }
 
+// ---------- autopilot: say what you want, Obstat uses your apps to do it ----------
+
+// what the current or last run did, kept while moving between pages
+const pilot = { running: false, events: [], files: [] }
+let pilotLog = null
+function pilotLine(e) {
+  const short = (v) => { const t = typeof v === "string" ? v : JSON.stringify(v); return t.length > 300 ? `${t.slice(0, 300)}…` : t }
+  if (e.type === "start") return el("li", { class: "note" }, `Using ${e.planner === "claude" ? `Claude (${e.model})` : `${e.model} on this computer`} with ${e.apps.join(", ")}.`)
+  if (e.type === "note") return el("li", { class: "note", text: e.text })
+  if (e.type === "say") return el("li", {}, el("b", { text: "Plan " }), el("span", { text: short(e.text) }))
+  if (e.type === "step") return el("li", {}, el("b", { text: "Running " }), el("code", { text: e.tool.replace("__", " · ") }), el("small", { text: ` ${short(e.input)}` }))
+  if (e.type === "result") return el("li", { class: e.error ? "err" : "" }, el("b", { text: e.error ? "Didn't work " : "Done " }), el("small", { text: short(e.text) }))
+  if (e.type === "file") return el("li", {}, el("b", { text: "Made " }), el("button", { class: "link", text: e.file.split(/[\\/]/).pop(), onclick: () => ask("autopilotOpen", e.file).catch(() => {}) }), el("small", { text: ` by ${e.app}` }))
+  if (e.type === "done") return el("li", { class: "ok-note" }, el("span", { text: e.text || "Finished." }), " ", el("button", { class: "link", text: "Open the folder", onclick: () => ask("autopilotOpen", e.dir).catch(() => {}) }))
+  if (e.type === "error") return el("li", { class: "err", text: `Stopped: ${e.text}` })
+  return null
+}
+function pilotEvent(e) {
+  pilot.events.push(e)
+  if (e.type === "done" || e.type === "error") pilot.running = false
+  const line = pilotLine(e)
+  if (pilotLog && line) { pilotLog.appendChild(line); pilotLog.scrollTop = pilotLog.scrollHeight }
+  if ((e.type === "done" || e.type === "error") && location.hash.startsWith("#/autopilot")) render()
+}
+
+async function autopilotView() {
+  let st
+  try { st = await ask("autopilotStatus") } catch (err) { st = { planner: null, reason: err.message, apps: [] } }
+  const files = []
+  const fileList = el("p", { class: "note" })
+  const goal = el("textarea", { rows: "3", class: "pilot-goal", placeholder: "e.g. Read this out in a calm British voice and save it as a file", "aria-label": "What should Autopilot do?", maxlength: "4000" })
+  const status = el("p", { class: "note" })
+  const attach = el("button", { class: "btn small ghost", text: "Attach files", onclick: async () => {
+    const got = await ask("autopilotPick")
+    files.push(...got.filter((f) => !files.includes(f)))
+    fileList.textContent = files.length ? `Attached: ${files.map((f) => f.split(/[\\/]/).pop()).join(", ")}` : ""
+  } })
+  const go = el("button", { class: "btn", text: "Do it", disabled: !st.planner || !st.apps.length || pilot.running, onclick: async () => {
+    if (!goal.value.trim()) { status.textContent = "Say what you'd like done."; return }
+    pilot.running = true; pilot.events = []
+    pilotLog.replaceChildren()
+    go.disabled = true; stop.hidden = false; status.textContent = ""
+    try { await ask("autopilotStart", goal.value, files) } catch (err) { status.textContent = err.message; pilot.running = false; go.disabled = false; stop.hidden = true }
+  } })
+  const stop = el("button", { class: "btn small ghost", text: "Stop", hidden: !pilot.running, onclick: () => ask("autopilotStop") })
+  pilotLog = el("ol", { class: "timeline pilot-log" }, ...pilot.events.map(pilotLine).filter(Boolean))
+
+  // how it plans: Claude with the user's key, or a local model through Ollama
+  const key = el("input", { type: "password", placeholder: "Anthropic API key (sk-ant-…)", "aria-label": "Anthropic API key", autocomplete: "off" })
+  const keyNote = el("p", { class: "note" })
+  const setup = st.planner ? el("p", { class: "note ok-note", text: st.planner === "claude" ? `Plans with Claude (${st.model}) using your Anthropic key. The apps themselves run on this computer.` : `Plans with ${st.model} through Ollama: nothing leaves this computer.` })
+    : el("div", {},
+      el("p", { class: "note", text: st.reason }),
+      el("div", { class: "bar key-bar" }, key, el("button", { class: "btn small", text: "Save key", onclick: async () => {
+        try { await ask("autopilotKey", key.value); render() } catch (err) { keyNote.textContent = err.message }
+      } })),
+      keyNote,
+      el("p", { class: "note", text: "Or install Ollama (ollama.com) and pull a model that can use tools, like qwen3, to plan entirely on this computer." }))
+
+  return page("Autopilot", "Say what you want. Obstat picks the right apps on your computer and runs them, passing one app's result to the next.",
+    setup,
+    el("p", { class: "note", text: st.apps.length ? `Can use: ${st.apps.join(", ")}. Start another app once and Autopilot learns what it can do.` : "No app Autopilot can use yet. Start an installed app (Kokoro, Applio, RMBG…) once and Autopilot learns what it can do." }),
+    el("div", { class: "pilot" }, goal, el("div", { class: "row-btns" }, attach, go, stop), fileList, status),
+    el("h2", { class: "group-h", text: "What it's doing" }),
+    pilotLog)
+}
+
 // ---------- live app events ----------
 
 function appendLog(id, text) {
@@ -1863,6 +1931,7 @@ async function showRunning() {
 }
 
 window.obstat.onEvent((ev) => {
+  if (ev.type === "autopilot") return pilotEvent(ev)
   if (ev.type === "state") showRunningSoon()
   if (ev.type === "open-app" && typeof ev.id === "string") go(`#/app/${ev.id.split("/").map(encodeURIComponent).join("/")}`)
   else if (ev.type === "log") appendLog(ev.id, ev.text)

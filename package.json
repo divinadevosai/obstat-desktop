@@ -129,6 +129,7 @@
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "electron-updater": "^6.8.9",
     "js-yaml": "^4.3.2",
     "semver": "^7.8.5"

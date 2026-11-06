@@ -269,3 +269,9 @@ a.post:hover{border-color:var(--acc)}
 .badge.pinned{color:#4a46c9;background:rgba(91,87,224,.12);border-color:rgba(91,87,224,.25);text-decoration:none}
 :root:not([data-theme="light"]) .badge.pinned{color:#b9b6ff}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .badge.pinned{color:#4a46c9}}
+
+/* Autopilot */
+.pilot { display: grid; gap: 10px; margin: 12px 0 18px; }
+.pilot-goal { width: 100%; resize: vertical; min-height: 84px; font: inherit; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line, rgba(255,255,255,.18)); background: var(--glass, rgba(255,255,255,.08)); color: inherit; }
+.pilot-log li.err { color: var(--danger, #e5484d); }
+.pilot-log code { font-size: .9em; }

@@ -172,6 +172,24 @@ async function main() {
   const appApi = await require("../lib/appapi").discover(url)
   say(appApi.kind ? `its API: ${appApi.kind}${appApi.prefix ? ` (${appApi.prefix})` : ""}, ${appApi.endpoints.length} endpoint${appApi.endpoints.length === 1 ? "" : "s"}: ${appApi.endpoints.slice(0, 6).map((e) => `${e.name}(${e.inputs.map((i) => i.name).join(", ")})`).join(" ")}` : `its API: none readable (${appApi.reason}${appApi.tried ? ` [${appApi.tried.join("; ")}]` : ""})`)
 
+  // a real call through that API, the way Autopilot makes one: inputs by name, the rest
+  // left at the app's defaults, and the files it makes saved
+  if (spec.call && appApi.kind) {
+    const appapi = require("../lib/appapi")
+    const ep = appApi.endpoints.find((e) => e.name === spec.call.endpoint)
+    if (!ep) fail(`its API has no ${spec.call.endpoint}`)
+    else {
+      try {
+        const out = await appapi.call(appApi, ep.name, ep.inputs.map((f) => (f.name in spec.call.input ? spec.call.input[f.name] : f.default ?? null)))
+        const files = []
+        for (const v of out) if (v && v.file) files.push(await appapi.save(v.fileUrl, path.join(OUT, "api-call"), v.name ? path.basename(v.name) : "output"))
+        const sizes = files.map((f) => `${path.basename(f)} (${fs.statSync(f).size} bytes)`)
+        if (!files.length || files.some((f) => fs.statSync(f).size === 0)) fail(`calling ${ep.name} made no file: ${JSON.stringify(out).slice(0, 300)}`)
+        else say(`called ${ep.name} through its API and kept ${sizes.join(", ")}`)
+      } catch (err) { fail(`calling ${ep.name} through its API: ${err.message}`) }
+    }
+  }
+
   const page = electron ? await viewPage(id, url) : await fetchPage(url)
   if (isBuild && electron) await useBuiltUi(page)
 
