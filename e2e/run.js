@@ -254,7 +254,7 @@ async function stopNotes(home, id) {
   if (process.platform !== "win32") return
   const file = path.join(home.dir("logs"), "obstat.log")
   const read = () => { try { return fs.readFileSync(file, "utf8").split(/\r?\n/).filter((l) => l.includes(`${id}: Stop:`)) } catch { return [] } }
-  for (let i = 0; i < 120 && !read().length; i++) await wait(500)
+  for (let i = 0; i < 120 && !read().some((l) => /leftover/.test(l)); i++) await wait(500)
   for (const line of read()) say(`obstat.log: ${line}`)
 }
 // On Windows: what listens on the app's port, with its parent and command line.
