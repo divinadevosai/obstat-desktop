@@ -330,3 +330,87 @@ test("every run and every recipe run leaves a receipt: apps, steps, files and wh
     assert.equal(last.steps[0].ok, false)
   } finally { s.close() }
 })
+
+// ---------- installing apps a plan needs (reviewed ones, after a yes) ----------
+function withInstall(s, { answer = true } = {}) {
+  // Echo FX isn't installed yet; it's on the reviewed list
+  s.list[1].installed = false
+  const asked = [], installs = []
+  const deps = {
+    catalog: async () => [{ id: "b/fx", name: "Echo FX", description: "Adds echo to audio" }, { id: "a/kokoro", name: "Kokoro TTS" }],
+    confirm: async (q) => { asked.push(q); return answer },
+  }
+  const apps = {
+    list: () => s.list,
+    ensureRunning: async (id) => s.list.find((a) => a.id === id).running.url,
+    install: async (id) => { installs.push(id); s.list.find((a) => a.id === id).installed = true },
+  }
+  return { deps, apps, asked, installs }
+}
+
+test("a plan can install a reviewed app it needs, once the person says yes, and then use it", async () => {
+  const s = await setup()
+  try {
+    const w = withInstall(s)
+    const claude = scriptedClaude([
+      (req) => {
+        const install = req.tools.find((t) => t.name === "install_app")
+        assert.deepEqual(install.input_schema.properties.app.enum, ["b/fx"], "only reviewed apps that aren't installed")
+        assert.ok(!req.tools.some((t) => t.name.startsWith("echo_fx")))
+        return { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "kokoro_tts__generate_speech", input: { text: "Hi" } }, { type: "tool_use", id: "t2", name: "install_app", input: { app: "b/fx", why: "To add the echo." } }] }
+      },
+      (req) => {
+        assert.match(req.messages.at(-1).content[1].content, /Installed Echo FX\. New tools: echo_fx__add_echo/)
+        assert.ok(req.tools.some((t) => t.name === "echo_fx__add_echo"), "its actions are offered from the next turn")
+        const speech = JSON.parse(req.messages.at(-1).content[0].content)[0].Audio.file
+        return { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t3", name: "echo_fx__add_echo", input: { audio: speech } }] }
+      },
+      () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "done" }] }),
+    ])
+    const pilot = autopilotLib.create({ home: s.h, keys: s.keys, apps: w.apps, ...w.deps, emit: (e) => s.events.push(e), plannerClaude: { MODEL: "m", plan: (o) => require("../lib/planner-claude").plan({ ...o, client: claude }) } })
+    const r = await pilot.start({ goal: "Say hi with an echo" })
+    assert.deepEqual(w.asked.map((q) => [q.apps.map((a) => a.id), q.why]), [[["b/fx"], "To add the echo."]])
+    assert.deepEqual(w.installs, ["b/fx"])
+    assert.equal(s.fx.uploads.length, 1)
+    assert.deepEqual(r.receipt.steps.map((x) => [x.app, x.action, x.ok]), [["a/kokoro", "/generate_speech", true], ["b/fx", "install", true], ["b/fx", "/add_echo", true]])
+  } finally { s.close() }
+})
+
+test("when the person says no, nothing is installed and the plan is told", async () => {
+  const s = await setup()
+  try {
+    const w = withInstall(s, { answer: false })
+    const claude = scriptedClaude([
+      () => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "install_app", input: { app: "b/fx", why: "echo" } }] }),
+      (req) => ({ stop_reason: "end_turn", content: [{ type: "text", text: req.messages.at(-1).content[0].content }] }),
+    ])
+    const pilot = autopilotLib.create({ home: s.h, keys: s.keys, apps: w.apps, ...w.deps, plannerClaude: { MODEL: "m", plan: (o) => require("../lib/planner-claude").plan({ ...o, client: claude }) } })
+    const r = await pilot.start({ goal: "echo" })
+    assert.match(r.text, /The user said no/)
+    assert.deepEqual(w.installs, [])
+  } finally { s.close() }
+})
+
+test("a recipe that needs a reviewed app asks to install it; one that isn't reviewed says to install it first", async () => {
+  const s = await setup()
+  const mine = path.join(os.tmpdir(), `obstat-recipe-install-${process.pid}.wav`)
+  fs.writeFileSync(mine, "RIFF mine")
+  try {
+    const recipe = recipesLib.check({ obstatRecipe: 1, name: "Echo it", files: [{ label: "audio" }], steps: [{ app: "b/fx", appName: "Echo FX", action: "/add_echo", inputs: [{ label: "Input audio", file: { input: 0 } }] }] })
+    const no = withInstall(s, { answer: false })
+    await assert.rejects(autopilotLib.create({ home: s.h, keys: s.keys, apps: no.apps, ...no.deps }).replay(recipe, { files: [mine] }), /weren't installed/)
+    assert.deepEqual(no.installs, [])
+
+    const yes = withInstall(s)
+    const r = await autopilotLib.create({ home: s.h, keys: s.keys, apps: yes.apps, ...yes.deps }).replay(recipe, { files: [mine] })
+    assert.match(yes.asked[0].why, /Echo it/)
+    assert.deepEqual(yes.installs, ["b/fx"])
+    assert.equal(r.files.length, 1)
+
+    const unlisted = withInstall(s)
+    s.list[1].installed = false
+    unlisted.deps.catalog = async () => []
+    await assert.rejects(autopilotLib.create({ home: s.h, keys: s.keys, apps: unlisted.apps, ...unlisted.deps }).replay(recipe, { files: [mine] }), /Echo FX, which isn't installed\. Install it from Discover first/)
+    assert.deepEqual(unlisted.asked, [])
+  } finally { s.close(); fs.rmSync(mine, { force: true }) }
+})

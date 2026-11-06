@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld("obstat", {
   autopilotPick: call("autopilot-pick"),
   autopilotKey: call("autopilot-key"),
   autopilotOpen: call("autopilot-open"),
+  autopilotAnswer: call("autopilot-answer"),
   recipesList: call("recipes-list"),
   recipeKeep: call("recipe-keep"),
   recipeRun: call("recipe-run"),
