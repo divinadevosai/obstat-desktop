@@ -73,7 +73,8 @@ const keys = keysLib.create(home, crypt)
 // starting an app when a plan needs it
 const autopilot = autopilotLib.create({
   home, keys,
-  emit: (e) => toWindow(e),
+  // Autopilot's own events (step, file, done…) go to the window as one "autopilot" event
+  emit: (e) => toWindow({ type: "autopilot", event: e }),
   apps: {
     list: () => apps.list(),
     dirOf: (id) => apps.appDir(id),
@@ -87,8 +88,36 @@ const autopilot = autopilotLib.create({
       if (!r.ok || !url) throw new Error(`${a?.name || id} didn't start${r.error ? `: ${r.error}` : "."}`)
       return url
     },
+    // a reviewed app, installed at its reviewed commit exactly as Install in Discover does
+    // it (download, then the install steps as previewed, behind the install walls).
+    // Autopilot only calls this after the person said yes (confirm below).
+    install: async (id, note) => {
+      const reviewed = (await api.list(net.fetch)).find((r) => r.id.toLowerCase() === String(id).toLowerCase())
+      if (!reviewed) throw new Error(`${id} isn't on the reviewed list.`)
+      const entry = { ...reviewed, url: `https://github.com/${reviewed.owner}/${reviewed.name}.git`, sha: reviewed.reviewedSha, reviewed: true }
+      home.log(`autopilot: installing ${reviewed.id} at ${String(entry.sha).slice(0, 7)}`)
+      const log = (text) => toWindow({ type: "log", id: reviewed.id.toLowerCase(), text })
+      await apps.fetchApp(entry, log)
+      const plan = await apps.preview(reviewed.id.toLowerCase(), "install.js")
+      if (plan.unsupported?.length) throw new Error(`${reviewed.name}'s install uses steps Obstat doesn't support (${plan.unsupported.join(", ")}). Install it from Discover to see them.`)
+      note(`${plan.commands.length} install step${plan.commands.length === 1 ? "" : "s"} for ${reviewed.name}…`)
+      const r = await apps.run(reviewed.id.toLowerCase(), "install.js", plan.token)
+      if (!r.ok) throw new Error(`${reviewed.name} didn't install: ${r.error || "its install stopped"}.`)
+    },
   },
+  // the reviewed apps, for Autopilot to offer installing
+  catalog: () => api.list(net.fetch),
+  // asks the person in the Autopilot page; no answer in 10 minutes, or Stop, is no
+  confirm: (question, signal) => new Promise((resolve) => {
+    const token = require("node:crypto").randomBytes(12).toString("hex")
+    const done = (yes) => { if (!asking.has(token)) return; asking.delete(token); clearTimeout(timer); resolve(!!yes) }
+    const timer = setTimeout(() => done(false), 10 * 60000)
+    asking.set(token, done)
+    signal?.addEventListener("abort", () => done(false), { once: true })
+    toWindow({ type: "autopilot", event: { type: "ask", token, ...question } })
+  }),
 })
+const asking = new Map()
 const recipes = recipesLib.create(home)
 const account = accountLib.create(home, crypt)
 const icons = iconsLib.create(home.dir("cache"), (url, opts) => net.fetch(url, opts))
@@ -386,7 +415,9 @@ app.whenReady().then(() => shellPath).then(() => {
     // files the user picked in Obstat's own file dialog (autopilot-pick), nothing else
     return autopilot.start({ goal, files: okFiles(files) })
   })
-  handle("autopilot-stop", () => autopilot.stop())
+  handle("autopilot-stop", () => { autopilot.stop(); for (const done of [...asking.values()]) done(false) })
+  // the person's answer to "install these apps?"
+  handle("autopilot-answer", (token, yes) => { asking.get(String(token))?.(yes === true) })
   const picked = new Set()
   handle("autopilot-pick", async () => {
     const r = await dialog.showOpenDialog(win, { properties: ["openFile", "multiSelections"] })

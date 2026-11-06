@@ -1845,7 +1845,7 @@ async function keysBox() {
 // ---------- autopilot: say what you want, Obstat uses your apps to do it ----------
 
 // what the current or last run did, kept while moving between pages
-const pilot = { running: false, events: [], files: [] }
+const pilot = { running: false, events: [], files: [], answers: {} }
 let pilotLog = null
 function pilotLine(e) {
   const short = (v) => { const t = typeof v === "string" ? v : JSON.stringify(v); return t.length > 300 ? `${t.slice(0, 300)}…` : t }
@@ -1858,8 +1858,29 @@ function pilotLine(e) {
   if (e.type === "done") return el("li", { class: "ok-note" }, el("span", { text: e.text || "Finished." }), " ", el("button", { class: "link", text: "Open the folder", onclick: () => ask("autopilotOpen", e.dir).catch(() => {}) }))
   if (e.type === "error") return el("li", { class: "err", text: `Stopped: ${e.text}` })
   if (e.type === "receipt") return receiptLine(e)
+  if (e.type === "ask") return askLine(e)
   return null
 }
+// Autopilot asking to install reviewed apps a plan (or a recipe) needs
+function askLine(e) {
+  const answered = pilot.answers[e.token]
+  const names = e.apps.map((a) => a.name).join(", ")
+  const answer = (yes) => {
+    pilot.answers[e.token] = yes ? "yes" : "no"
+    ask("autopilotAnswer", e.token, yes).catch(() => {})
+    line.replaceWith(askLine(e))
+  }
+  const line = el("li", { class: "ask" },
+    el("b", { text: `Install ${names}? ` }),
+    el("span", { text: e.why || "" }),
+    el("ul", {}, ...e.apps.map((a) => el("li", { text: `${a.name}: reviewed by the Obstat team${a.about ? `. ${a.about}` : ""}` }))),
+    answered ? el("small", { text: answered === "yes" ? "You said yes." : "You said no." })
+      : el("div", { class: "row-btns" },
+        el("button", { class: "btn small", text: e.apps.length === 1 ? "Install it" : "Install them", onclick: () => answer(true) }),
+        el("button", { class: "btn small ghost", text: "No thanks", onclick: () => answer(false) })))
+  return line
+}
+
 // the run's privacy receipt (lib/receipt.js): what ran, what went where
 function receiptLine(e) {
   const r = e.receipt
@@ -2014,7 +2035,7 @@ async function showRunning() {
 }
 
 window.obstat.onEvent((ev) => {
-  if (ev.type === "autopilot") return pilotEvent(ev)
+  if (ev.type === "autopilot" && ev.event && typeof ev.event.type === "string") return pilotEvent(ev.event)
   if (ev.type === "state") showRunningSoon()
   if (ev.type === "open-app" && typeof ev.id === "string") go(`#/app/${ev.id.split("/").map(encodeURIComponent).join("/")}`)
   else if (ev.type === "log") appendLog(ev.id, ev.text)
