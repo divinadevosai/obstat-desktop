@@ -79,6 +79,18 @@ test("older Gradio (4) paths work too, and an app's error comes back as an error
   } finally { s.close() }
 })
 
+test("a big app's description (several MB, like Kokoro's) is read too", async () => {
+  const big = { named_endpoints: { "/generate_speech": { parameters: [{ label: "Text", parameter_name: "text", parameter_has_default: true, parameter_default: "x".repeat(3 << 20), component: "Textbox" }], returns: [] } } }
+  const s = http.createServer((q, r) => (q.url === "/gradio_api/info" ? r.end(JSON.stringify(big)) : (r.statusCode = 404, r.end()))).listen(0, "127.0.0.1")
+  await new Promise((r) => s.once("listening", r))
+  try {
+    const api = await appapi.discover(`http://127.0.0.1:${s.address().port}`)
+    assert.equal(api.kind, "gradio", JSON.stringify(api.tried))
+    assert.equal(api.endpoints[0].name, "/generate_speech")
+    assert.ok(String(api.endpoints[0].inputs[0].default).length <= 200, "long values are cut down")
+  } finally { s.close() }
+})
+
 test("only apps on this computer are asked, and a non-Gradio app is said so", async () => {
   assert.equal((await appapi.discover("https://example.com")).kind, null)
   assert.equal((await appapi.discover("http://192.168.1.5:7860")).kind, null)
