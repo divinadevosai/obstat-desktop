@@ -206,9 +206,20 @@ async function main() {
   if (outside.length) fail(`the app asked to open pages on other sites: ${outside.map((e) => e.url).join(", ")}`)
 
   // Stop must leave nothing behind holding its port
+  const stopAt = Date.now()
   apps.stop(id)
   const until = Date.now() + 20000
-  while (Date.now() < until && (apps.get(id)?.running || (await listening(url)))) await wait(500)
+  // when the app stopped counting as running, and when its address went quiet
+  const seen = {}
+  const since = () => `${((Date.now() - stopAt) / 1000).toFixed(1)}s`
+  for (;;) {
+    const busy = !!apps.get(id)?.running, up = await listening(url)
+    if (!busy && !seen.running) seen.running = since()
+    if (!up && !seen.port) seen.port = since()
+    if ((!busy && !up) || Date.now() >= until) break
+    await wait(500)
+  }
+  say(`after Stop: not running from ${seen.running || "never"}, address quiet from ${seen.port || "never"}`)
   if (await listening(url)) { fail(`something still answers at ${url} after Stop`); await whoHolds(url) }
   else say("stopped, and nothing answers at its address any more")
   await stopNotes(home, id)
