@@ -317,3 +317,85 @@ test("on Windows, a copy of the app left holding its port is found by its folder
   assert.deepEqual(await apps.portOwners(70000, dir, run), [])
   assert.equal(calls.length, 0)
 })
+
+// A fake Windows for sweepWindows: `shells` answer tasklist as cmd.exe, `vite` holds the
+// port from inside the app's folder, `other` holds another port from somewhere else.
+function fakeWindows(dir, { shells = [100], held = () => true } = {}) {
+  const calls = []
+  const run = (cmd, args, _o, cb) => {
+    calls.push([cmd, ...args])
+    if (cmd === "tasklist") { const pid = Number(/PID eq (\d+)/.exec(args[1])[1]); return cb(null, shells.includes(pid) ? `"cmd.exe","${pid}","Console","1","4,000 K"` : "INFO: No tasks are running which match the specified criteria.") }
+    if (cmd === "powershell.exe" && /Get-NetTCPConnection/.test(args[3])) return cb(null, `4242\t${dir}\\runtimes-copy\\node.exe\t"node.exe" "${dir}\\node_modules\\vite\\bin\\vite.js"\r\n7000\tC:\\Other\\other.exe\tother.exe`)
+    if (cmd === "powershell.exe") return cb(null, "")
+    cb(null, "")
+  }
+  return { calls, run, listening: async (port) => held(port) }
+}
+
+test("on Windows, Stop ends what still holds the app's port after the tree kill (vite outliving taskkill /T)", async () => {
+  const dir = "C:\\Users\\me\\obstat\\apps\\divinadevosai-plazai"
+  const w = fakeWindows(dir)
+  let clock = 0
+  const s = await apps.sweepWindows({ shells: [100], since: 0, ports: [5173, 5173, "x"], dir, run: w.run, listening: w.listening, wait: async (ms) => { clock += ms }, now: () => clock, grace: 2000 })
+  // the shell's tree, first, from Obstat itself
+  assert.deepEqual(w.calls.find((c) => c[0] === "taskkill"), ["taskkill", "/pid", "100", "/T", "/F"])
+  assert.equal(s.shells, 1)
+  // the port still answered through the grace period: only what runs from the app's folder is ended
+  assert.deepEqual(s.held, [5173])
+  assert.equal(s.byPort, 1)
+  assert.deepEqual(w.calls.filter((c) => c[0] === "taskkill").at(-1), ["taskkill", "/F", "/T", "/PID", "4242"])
+  assert.ok(clock >= 2000, "waited the grace period before the fallback")
+  // one port lookup, started at once (not after the wait), for the one valid port
+  assert.equal(w.calls.filter((c) => c[0] === "powershell.exe" && /Get-NetTCPConnection/.test(c[4])).length, 1)
+})
+
+test("on Windows, Stop leaves the app's port alone once the tree kill has freed it", async () => {
+  const dir = "C:\\Users\\me\\obstat\\apps\\divinadevosai-plazai"
+  let polls = 0
+  const w = fakeWindows(dir, { held: () => ++polls < 3 }) // answers twice more, then is gone
+  const s = await apps.sweepWindows({ shells: [100], since: 0, ports: [5173], dir, run: w.run, listening: w.listening, wait: async () => {}, grace: 2000 })
+  assert.deepEqual(s.held, [])
+  assert.equal(s.byPort, 0)
+  assert.equal(w.calls.filter((c) => c[0] === "taskkill").length, 1)
+  // a shell id that is no longer a shell isn't touched
+  const gone = fakeWindows(dir, { shells: [], held: () => false })
+  const t = await apps.sweepWindows({ shells: [100], since: 0, ports: [5173], dir, run: gone.run, listening: gone.listening, wait: async () => {} })
+  assert.equal(t.shells, 0)
+  assert.equal(gone.calls.filter((c) => c[0] === "taskkill").length, 0)
+})
+
+test("on Windows, Stop sweeps the app's tree and port from Obstat, not only from the worker", { skip: process.platform === "win32", timeout: 30000 }, async () => {
+  const h = home.create(fs.mkdtempSync(path.join(os.tmpdir(), "obstat-"))); h.ensure()
+  const runtimes = { ensureAll: async () => {}, paths: () => [], python: () => "python3", git: () => "git" }
+  const id = "divinadevosai/plazai"
+  let w
+  const a = apps.create(h, runtimes, { platform: "win32", exec: (...args) => w.run(...args), listening: async (p) => w.listening(p) })
+  const dir = a.appDir(id)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, "server.js"), `require("node:http").createServer((q, r) => r.end("ok")).listen(Number(process.argv[2]), "127.0.0.1", () => console.log("Local: http://127.0.0.1:" + process.argv[2] + "/"))\n`)
+  fs.writeFileSync(path.join(dir, "start.js"), `module.exports = { daemon: true, run: [
+    { method: "shell.run", params: { message: ["node server.js {{port}}"], on: [{ event: "/(http:\\\\/\\\\/[0-9.:]+)/", done: true }] } },
+    { method: "local.set", params: { url: "{{input.event[1]}}" } },
+  ] }`)
+  fs.writeFileSync(path.join(h.root, "apps.json"), JSON.stringify({ [id]: { id, reviewed: true, installed: true } }))
+  const started = await a.run(id, "start.js")
+  assert.equal(started.running, true)
+  const { url } = a.get(id).running
+  const port = Number(new URL(url).port)
+  // as on the slow runner: the shell's taskkill /T didn't end vite, which keeps the port
+  const shells = []
+  w = fakeWindows(dir, { shells, held: (p) => p === port })
+  // the shell's id the worker reported (a real one here) answers as cmd.exe
+  shells.push(...JSON.parse(fs.readFileSync(path.join(h.root, "apps-running.json"), "utf8"))[id])
+  assert.equal(a.stop(id), true)
+  const logFile = path.join(h.dir("logs"), "obstat.log")
+  for (let i = 0; i < 100 && !(fs.existsSync(logFile) && /Stop:/.test(fs.readFileSync(logFile, "utf8"))); i++) await new Promise((r) => setTimeout(r, 100))
+  const log = fs.readFileSync(logFile, "utf8")
+  assert.match(log, new RegExp(`${id}: Stop: taskkill /T ended 1 shell .*port ${port} still answered after that: ended 1 process holding it`))
+  assert.ok(w.calls.some((c) => c.join(" ") === `taskkill /pid ${shells[0]} /T /F`))
+  assert.ok(w.calls.some((c) => c.join(" ") === "taskkill /F /T /PID 4242"))
+  // the leftovers walk ran from Stop, from just before the app started
+  assert.ok(w.calls.some((c) => c[0] === "powershell.exe" && /Win32_Process \|/.test(c[4])))
+  for (let i = 0; i < 50 && a.get(id).running; i++) await new Promise((r) => setTimeout(r, 100))
+  assert.equal(a.get(id).running, null)
+})

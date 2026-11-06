@@ -209,8 +209,9 @@ async function main() {
   apps.stop(id)
   const until = Date.now() + 20000
   while (Date.now() < until && (apps.get(id)?.running || (await listening(url)))) await wait(500)
-  if (await listening(url)) fail(`something still answers at ${url} after Stop`)
+  if (await listening(url)) { fail(`something still answers at ${url} after Stop`); await whoHolds(url) }
   else say("stopped, and nothing answers at its address any more")
+  await stopNotes(home, id)
 
   // A copy of the app an older Obstat left running holds the port: Obstat ends it and starts again
   if (spec.leftover && process.platform === "win32") {
@@ -234,6 +235,26 @@ async function main() {
     while (Date.now() < end && (apps.get(id)?.running || (await listening(url)))) await wait(500)
   }
   return page
+}
+
+// What Stop logged (lib/apps.js sweepWindows: how long the tree kill, the port check and
+// the leftovers walk took), once it has all come in, so a slow Stop shows where it was slow.
+async function stopNotes(home, id) {
+  if (process.platform !== "win32") return
+  const file = path.join(home.dir("logs"), "obstat.log")
+  const read = () => { try { return fs.readFileSync(file, "utf8").split(/\r?\n/).filter((l) => l.includes(`${id}: Stop:`)) } catch { return [] } }
+  for (let i = 0; i < 120 && !read().length; i++) await wait(500)
+  for (const line of read()) say(`obstat.log: ${line}`)
+}
+// On Windows: what listens on the app's port, with its parent and command line.
+function whoHolds(url) {
+  if (process.platform !== "win32") return Promise.resolve()
+  const port = Number(new URL(url).port)
+  const ps = `Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $_.OwningProcess); if ($p) { '{0} (parent {1}, started {2}): {3}' -f $p.ProcessId, $p.ParentProcessId, $p.CreationDate.ToUniversalTime().ToString('o'), $p.CommandLine } }`
+  return new Promise((resolve) => execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { windowsHide: true }, (err, stdout) => {
+    say(`holding port ${port}: ${String(stdout || "").trim() || (err ? err.message : "nothing found")}`)
+    resolve()
+  }))
 }
 
 // A sandbox test, as the Sandbox page runs one: cloned, installed and started inside
