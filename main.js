@@ -28,6 +28,7 @@ const deeplink = require("./lib/deeplink")
 const platformLib = require("./lib/platform")
 const { MacUpdater } = require("./lib/macupdate")
 const fs = require("node:fs")
+const os = require("node:os")
 const { which, withPath } = require("./lib/env")
 const fsp = require("node:fs/promises")
 const { spawn } = require("node:child_process")
@@ -301,6 +302,37 @@ app.whenReady().then(() => shellPath).then(() => {
   handle("set-control", async (on) => {
     home.setPref("agentLink", !!on)
     return on ? control.start() : control.stop()
+  })
+  // The install doctor (lib/doctor.js): what went wrong in plain words, from the app's own log
+  const doctor = require("./lib/doctor")
+  let gpuSeen
+  const gpu = () => (gpuSeen ||= new Promise((resolve) => require("node:child_process").execFile("nvidia-smi", ["-L"], { timeout: 5000, windowsHide: true }, (err, out) => resolve(err ? null : appsLib.gpuModel(out)))))
+  async function failure(id, script) {
+    if (typeof id !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(id)) throw new Error("That isn't an app id.")
+    if (!/^[\w.-]{1,60}\.(js|json)$/.test(String(script))) throw new Error("That isn't one of the app's scripts.")
+    const a = apps.get(id)
+    if (!a) throw new Error("That app isn't here.")
+    const r = await home.readLog(`apps/${path.basename(apps.appDir(id))}/${script.replace(/\.(js|json)$/, "")}.txt`).catch(() => ({ text: "" }))
+    const info = { version: app.getVersion(), system: `${os.version()} (${os.release()}) ${os.arch()}`, gpu: await gpu(), ram: `${Math.round(os.totalmem() / 2 ** 30)} GB RAM` }
+    return { app: { id: a.id, name: a.name, commit: a.commit }, a, script, log: r.text, info }
+  }
+  handle("doctor", async (id, script, error) => {
+    const f = await failure(id, script)
+    const findings = doctor.diagnose(f.log)
+    const st = await autopilot.status().catch(() => ({ planner: null }))
+    return {
+      findings,
+      report: doctor.report({ ...f, error: typeof error === "string" ? error : "", findings }),
+      // where a report goes: the app's own repository (not for apps made here)
+      issues: f.a.local || !f.a.url ? null : `https://github.com/${f.a.id}/issues/new?title=${encodeURIComponent(`Fails to ${script === "install.js" ? "install" : "start"} in Obstat${findings[0] ? `: ${findings[0].title.toLowerCase()}` : ""}`)}`,
+      ai: st.planner ? { planner: st.planner, model: st.model } : null,
+    }
+  })
+  // the end of the log (home folder, names and keys removed) to the planner the user set up
+  handle("doctor-explain", async (id, script, error) => {
+    const f = await failure(id, script)
+    home.log(`doctor: asking the planner about ${id} ${script}`)
+    return autopilot.askPlanner({ system: doctor.SYSTEM, text: doctor.question({ ...f, error: typeof error === "string" ? error : "" }) })
   })
   // AI tools connected to Obstat's apps (lib/connect.js)
   handle("mcp-status", () => ({ ...connect.status(), link: control.status().on }))

@@ -283,3 +283,9 @@ a.post:hover{border-color:var(--acc)}
 .pilot-log li.receipt ul li { font-size: .92em; opacity: .9; }
 .pilot-log li.ask { border-left: 3px solid var(--accent, #7c5cff); padding-left: 10px; }
 .pilot-log li.ask ul { margin: 6px 0; padding-left: 18px; }
+/* Install doctor */
+.doctor-finding { padding: 10px 0; border-top: 1px solid var(--line, rgba(255,255,255,.14)); }
+.doctor-finding:first-of-type { border-top: 0; }
+.doctor-finding h3 { margin: 0 0 4px; font-size: 1.02em; }
+.doctor-finding ol { margin: 6px 0 8px; padding-left: 20px; }
+.doctor-ai { white-space: pre-wrap; }

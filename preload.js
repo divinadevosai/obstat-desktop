@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld("obstat", {
   removeSkill: call("skill-remove"),
   control: call("control"),
   setControl: call("set-control"),
+  doctor: call("doctor"),
+  doctorExplain: call("doctor-explain"),
   mcpStatus: call("mcp-status"),
   mcpConnect: call("mcp-connect"),
   mcpDisconnect: call("mcp-disconnect"),

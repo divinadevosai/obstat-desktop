@@ -327,6 +327,8 @@ const views = {
 
     const busy = (on) => { for (const b of menu.querySelectorAll("button")) b.disabled = on }
     const fail = (err) => { note.replaceChildren(); appendLog(id, `\n${err.message}\n`); busy(false) }
+    // a start that stopped on the app's own tab: its doctor shows here
+    if (pendingDoctor?.id === id) { const d = pendingDoctor; pendingDoctor = null; doctorNote(d.script, d.error, () => start(d.script)) }
 
     async function install(_ev, kept = false) {
       if (!isReviewed && !kept && !mine && !confirm("Nobody has reviewed this repo. Its install steps will run on your PC with your permissions. You'll see its commands first; a few details, like ports, are filled in as they run. Continue?")) return
@@ -362,6 +364,7 @@ const views = {
               if (!r.ok) appendLog(id, `\nThe ${what} stopped: ${r.error}\n`)
               // the steps run again from a fresh look, since this approval is used up
               if (r.needsCompiler) return compilerNote(async () => { try { showPlan(await ask("preview", id, script), script) } catch (err) { fail(err) } })
+              if (!r.ok) return doctorNote(script, r.error, async () => { try { showPlan(await ask("preview", id, script), script) } catch (err) { fail(err) } })
             } catch (err) { appendLog(id, `\n${err.message}\n`) }
             render()
           } }),
@@ -388,6 +391,50 @@ const views = {
           el("button", { class: "btn small ghost", text: "Not now", onclick: () => { note.replaceChildren(); busy(false) } }))))
     }
 
+    // The install doctor (lib/doctor.js): what went wrong in plain words, what to do, a
+    // report for the app's developers, and (if a planner is set up) an AI's explanation.
+    async function doctorNote(script, error, again) {
+      busy(false)
+      const what = script === "install.js" ? "install" : script === "reset.js" ? "reset" : "start"
+      note.replaceChildren(el("p", { class: "note", text: "Looking at what went wrong…" }))
+      let d
+      try { d = await ask("doctor", id, script, error) } catch { return render() }
+      const said = el("p", { class: "note" })
+      const copyBtn = el("button", { class: "btn small ghost", text: "Copy a report for its developers", onclick: async () => {
+        try { await navigator.clipboard.writeText(d.report); copyBtn.textContent = "Copied"; said.textContent = "Your home folder, user name and anything shaped like a key were taken out of it." } catch { said.textContent = "Couldn't copy it." }
+      } })
+      const issueBtn = d.issues && el("button", { class: "btn small ghost", text: "Report it on GitHub ↗", onclick: async () => {
+        try { await navigator.clipboard.writeText(d.report) } catch {}
+        said.textContent = "The report is copied: paste it into the page that opens."
+        window.obstat.openExternal(d.issues)
+      } })
+      const aiBox = el("div", {})
+      const aiBtn = d.ai && el("button", { class: "btn small ghost", text: d.ai.planner === "claude" ? "Ask Claude to explain" : `Ask ${d.ai.model} to explain`, title: d.ai.planner === "claude" ? "Sends the end of the log to Anthropic with your key, with your home folder, name and keys removed." : "Asks the model on this computer; nothing leaves it.", onclick: async () => {
+        aiBtn.disabled = true
+        aiBox.replaceChildren(el("p", { class: "note", text: d.ai.planner === "claude" ? "Asking Claude (the end of the log goes to Anthropic, with your home folder, name and keys removed)…" : "Asking the model on this computer…" }))
+        try {
+          const r = await ask("doctorExplain", id, script, error)
+          aiBox.replaceChildren(el("h3", { text: r.planner === "claude" ? "Claude's reading" : `${r.model}'s reading` }), el("p", { class: "doctor-ai", text: r.text }))
+        } catch (err) { aiBox.replaceChildren(el("p", { class: "card-err", text: err.message })); aiBtn.disabled = false }
+      } })
+      const fixes = { insights: ["See what's using space", "#/insights"], keys: ["Open Keys", "#/settings"] }
+      const cards = d.findings.map((f) => el("div", { class: "doctor-finding" },
+        el("h3", { text: f.title }),
+        el("p", { class: "note", text: f.why }),
+        el("ol", {}, ...f.steps.map((t) => el("li", { text: t }))),
+        f.go && fixes[f.go] && el("button", { class: "btn small ghost", text: fixes[f.go][0], onclick: () => go(fixes[f.go][1]) })))
+      note.replaceChildren(el("div", { class: "plan doctor" },
+        el("h2", { text: d.findings.length ? `Why the ${what} stopped` : `The ${what} stopped` }),
+        ...cards,
+        !d.findings.length && el("p", { class: "note", text: "Obstat doesn't recognise this one. The log above has the details; its developers will know, and the report below gives them what they need." }),
+        aiBox,
+        el("div", { class: "row-btns" },
+          el("button", { class: "btn small", text: "Try again", onclick: () => { note.replaceChildren(); again() } }),
+          aiBtn, copyBtn, issueBtn,
+          el("button", { class: "btn small ghost", text: "Close", onclick: () => { note.replaceChildren(); render() } })),
+        said))
+    }
+
     async function start(script = "start.js") {
       busy(true)
       term.textContent = ""
@@ -396,6 +443,7 @@ const views = {
         if (r.needsApproval) return showPlan(r.preview, script)
         if (!r.ok) appendLog(id, `\nIt stopped: ${r.error}\n`)
         if (r.needsCompiler) return compilerNote(() => start(script))
+        if (!r.ok) return doctorNote(script, r.error, () => start(script))
         // it's up: show it inside Obstat, like a browser tab
         else if (r.running && current?.id === id && location.hash.startsWith("#/app/") && (await ask("app", id))?.running?.url) return go(runHash(id))
       } catch (err) { appendLog(id, `\n${err.message}\n`) }
@@ -1867,6 +1915,9 @@ async function keysBox() {
 
 // ---------- autopilot: say what you want, Obstat uses your apps to do it ----------
 
+// a failed start on an app's tab, for its page's install doctor to pick up
+let pendingDoctor = null
+
 // what the current or last run did, kept while moving between pages
 const pilot = { running: false, events: [], files: [], answers: {} }
 let pilotLog = null
@@ -2129,7 +2180,7 @@ async function runView(id) {
     const r = await ask("run", id, script).catch((err) => ({ ok: false, error: err.message }))
     // new or changed steps show on the app's page first
     if (r.needsApproval) return go(appHash(a))
-    if (!r.ok) say(`It stopped: ${r.error}`, el("button", { class: "btn small", text: "Back to the app", onclick: () => go(appHash(a)) }))
+    if (!r.ok) say(`It stopped: ${r.error}`, el("button", { class: "btn small", text: "See why", onclick: () => { pendingDoctor = { id, script, error: r.error }; go(appHash(a)) } }), el("button", { class: "btn small ghost", text: "Back to the app", onclick: () => go(appHash(a)) }))
   }
   async function idle() {
     opened = false
