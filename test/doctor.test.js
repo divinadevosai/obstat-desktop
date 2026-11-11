@@ -34,6 +34,24 @@ test("each known failure is recognised from the end of its log, with steps to ta
   assert.deepEqual(Object.keys(CASES).sort(), doctor.RULES.map((r) => r.id).sort(), "every rule has a case here")
 })
 
+test("uv's wording for a dropped download is recognised (a real log, from Obstat's own CI)", () => {
+  const log = [
+    "> uv pip install open-webui==0.12.3",
+    "Using Python 3.11.10 environment at: env",
+    "error: Failed to fetch: `https://files.pythonhosted.org/packages/f6/f4/062f77785c590d62a323e92ba9d179ce80286c4f31369f799612d5d1d0f2/redis-7.2.2-py3-none-any.whl.metadata`",
+    "  Caused by: error sending request for url (https://files.pythonhosted.org/packages/f6/f4/062f77785c590d62a323e92ba9d179ce80286c4f31369f799612d5d1d0f2/redis-7.2.2-py3-none-any.whl.metadata)",
+    "  Caused by: client error (SendRequest)",
+    "  Caused by: connection error",
+    "  Caused by: stream closed because of a broken pipe",
+    "",
+    "Stopped: A command failed (exit code 2).",
+  ].join("\n")
+  const found = doctor.diagnose(log)
+  assert.deepEqual(found.map((f) => f.id), ["network"])
+  assert.equal(found[0].title, "A download was cut off")
+  assert.equal(found[0].retry, true)
+})
+
 test("an ordinary log, or one that ran fine, gets no diagnosis; the nearest sign to the end leads", () => {
   assert.deepEqual(doctor.diagnose("Successfully installed torch-2.6.0\nRunning on local URL:  http://127.0.0.1:7860\nAll done, no errors, permission granted to proceed."), [])
   assert.deepEqual(doctor.diagnose(""), [])
