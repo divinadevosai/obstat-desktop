@@ -147,7 +147,10 @@ const updates = updatesLib.create(updater, {
 })
 
 const skills = skillsLib.create(path.join(__dirname, "skills"))
-const control = controlLib.create(home, apps, { log: (l) => home.log(l) })
+// the user's apps and recipes as tools for AI tools on this computer (MCP), on the agent link
+const mcp = require("./lib/mcp").create({ autopilot, recipes, apps, version: app.getVersion(), log: (l) => home.log(l) })
+const control = controlLib.create(home, apps, { log: (l) => home.log(l), mcp })
+const connect = require("./lib/connect").create(home, { node: () => runtimes.exe("node") || "node" })
 
 const APP_DIR = path.join(__dirname, "app")
 const START = "app://obstat/index.html"
@@ -299,6 +302,18 @@ app.whenReady().then(() => shellPath).then(() => {
     home.setPref("agentLink", !!on)
     return on ? control.start() : control.stop()
   })
+  // AI tools connected to Obstat's apps (lib/connect.js)
+  handle("mcp-status", () => ({ ...connect.status(), link: control.status().on }))
+  handle("mcp-connect", async (id) => {
+    await runtimes.ensure("node") // the bridge runs on Obstat's own Node
+    const r = connect.connect(String(id))
+    // the tools need the agent link: on with the first connection
+    if (!control.status().on) { home.setPref("agentLink", true); await control.start() }
+    home.log(`connected ${id} to Obstat's apps (MCP)`)
+    return { ...r, link: true }
+  })
+  handle("mcp-disconnect", (id) => ({ ...connect.disconnect(String(id)), link: control.status().on }))
+  handle("mcp-bridge", async () => { await runtimes.ensure("node"); connect.putBridge(); return { ...connect.status(), link: control.status().on } })
   handle("prefs", () => home.prefs())
   handle("set-pref", (key, value) => home.setPref(key, value))
   handle("logs", () => home.listLogs())
