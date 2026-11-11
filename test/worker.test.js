@@ -242,6 +242,19 @@ test("the app's address is the one it answers at: placeholders and example addre
   assert.deepEqual(out.opened, [`http://127.0.0.1:${port}/`])
 })
 
+test("an app's \"open this page\" still opens when its line arrives in two pieces", { skip: !posix }, async () => {
+  const port = await freePort()
+  // what BROWSER prints (lib/script.js), but written in two goes with a pause between,
+  // as a busy computer delivers it
+  const { dir } = app({ "serve.js": SERVE, "start.js": daemon([
+    `printf '%s' '[obstat-open] http://127.0.0.1:'; sleep 0.3; printf '%s\\n' '${port}/'`,
+    `node serve.js ${port} 'Running on local URL:  http://127.0.0.1:${port}.' print`,
+  ]) })
+  const out = await start(dir)
+  assert.equal(out.end, "ready", out.log)
+  assert.deepEqual(out.opened, [`http://127.0.0.1:${port}/`])
+})
+
 test("a coloured address (Vite on Windows) is found, and one on another computer isn't taken", { skip: !posix }, async () => {
   const port = await freePort()
   const { dir } = app({ "serve.js": SERVE, "start.js": daemon([
