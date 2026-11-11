@@ -761,7 +761,28 @@ const views = {
   },
 
   skills: async () => {
-    const [list, agents, link] = await Promise.all([ask("skills"), ask("skillAgents"), ask("control")])
+    const [list, agents, link, mcp] = await Promise.all([ask("skills"), ask("skillAgents"), ask("control"), ask("mcpStatus").catch(() => null)])
+    // your apps as tools in other AI tools (MCP): one click for the ones Obstat can set up
+    const copy = (text, btn) => async () => { try { await navigator.clipboard.writeText(text); btn.textContent = "Copied" } catch { btn.textContent = "Couldn't copy" } }
+    const mcpNote = el("p", { class: "note" })
+    const mcpBox = mcp && el("div", { class: "pilot" },
+      el("p", { class: "note", text: "Every app you've installed (and every recipe you've kept) becomes a tool in your other AI tools: ask Claude to “make a voiceover of this with Kokoro” and it runs here, on this computer, with a receipt. Start an app once in Obstat so its actions are known." }),
+      el("dl", { class: "rows" }, ...mcp.clients.map((c) => el("div", {},
+        el("dt", {}, c.name, el("small", { text: c.connected === "yes" ? `Connected. ${c.after}` : c.broken ? "Its settings file isn't readable, so Obstat won't touch it." : c.present ? "Found on this computer." : "Not found on this computer yet (you can still connect it)." })),
+        el("dd", {}, c.connected === "yes"
+          ? el("button", { class: "btn small ghost", text: "Disconnect", onclick: async () => { await ask("mcpDisconnect", c.id); render() } })
+          : el("button", { class: "btn small", text: c.connected === "changed" ? "Reconnect" : "Connect", disabled: c.broken, onclick: async (e) => {
+            e.target.disabled = true; mcpNote.textContent = "Getting it ready…"
+            try { await ask("mcpConnect", c.id); render() } catch (err) { mcpNote.textContent = err.message; e.target.disabled = false }
+          } }))))),
+      (() => {
+        const cmd = el("button", { class: "btn small ghost", text: "Copy the command for Claude Code" })
+        cmd.onclick = async () => { try { const st = await ask("mcpBridge"); await copy(st.command, cmd)(); mcpNote.textContent = "Paste it in a terminal, then start Claude Code. It needs “Let AI agents use Obstat” on (above)." } catch (err) { mcpNote.textContent = err.message } }
+        const snip = el("button", { class: "btn small ghost", text: "Copy settings for another tool" })
+        snip.onclick = async () => { try { const st = await ask("mcpBridge"); await copy(st.snippet, snip)(); mcpNote.textContent = "Any tool that takes MCP servers as JSON (“mcpServers”) can use this." } catch (err) { mcpNote.textContent = err.message } }
+        return el("div", { class: "row-btns" }, cmd, snip)
+      })(),
+      mcpNote)
     const linkRow = el("dl", { class: "rows" }, el("div", {},
       el("dt", {}, "Let AI agents use Obstat", el("small", { text: link.on
         ? `On. Agents with Obstat skills can list, start and stop your apps through ${link.url}, a private link only this PC can reach.`
@@ -789,6 +810,8 @@ const views = {
     }
     return page("Skills", "Skills teach AI agents like Claude Code and Codex to use your Obstat apps. Add one, then just ask your agent for the result.",
       linkRow,
+      mcpBox && el("div", { class: "section-h" }, el("h2", { text: "Use your apps from Claude, Cursor and other AI tools" })),
+      mcpBox,
       el("div", { class: "section-h" }, el("h2", { text: `Library · ${list.length}` })),
       el("div", { class: "skills" }, ...list.map(card)))
   },
@@ -1900,6 +1923,7 @@ const pilot = { running: false, events: [], files: [], answers: {} }
 let pilotLog = null
 function pilotLine(e) {
   const short = (v) => { const t = typeof v === "string" ? v : JSON.stringify(v); return t.length > 300 ? `${t.slice(0, 300)}…` : t }
+  if (e.type === "start" && e.planner === "agent") return el("li", { class: "note" }, `An AI tool on this computer asked ${e.apps.join(", ")} to run ${e.model.replace("__", " · ")} (through the agent link).`)
   if (e.type === "start") return el("li", { class: "note" }, e.planner === "recipe" ? `Running the recipe “${e.model}” with ${e.apps.join(", ")}: no planner, the same steps as before.` : `Using ${e.planner === "claude" ? `Claude (${e.model})` : `${e.model} on this computer`} with ${e.apps.join(", ")}.`)
   if (e.type === "note") return el("li", { class: "note", text: e.text })
   if (e.type === "say") return el("li", {}, el("b", { text: "Plan " }), el("span", { text: short(e.text) }))
