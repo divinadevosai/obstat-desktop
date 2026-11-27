@@ -853,7 +853,7 @@ const views = {
       el("dl", { class: "rows" }, el("div", {},
         el("dt", {}, "Let my phone use Obstat", el("small", { text: st.on
           ? `On. Phones you've paired can reach this computer at ${st.addresses.map((a) => `${a.address}:${st.port}`).join(" or ") || "(no home network right now)"}. Nothing goes through Obstat's servers.`
-          : "Off. When it's on, only phones you pair can use it, and only from your home Wi-Fi (or your own Tailscale)." })),
+          : `Off. When it's on, only phones you pair can use it, and only from your home Wi-Fi (or your own Tailscale).${info.platform === "win32" ? " Windows may ask whether Obstat can use the network: allow it on private networks." : ""}` })),
         el("dd", {}, toggle(st.on, async (v) => { const r = await ask("phoneSet", v); render(); return r.on })))),
       el("div", { class: "section-h" }, el("h2", { text: `Paired phones · ${st.devices.length}` })),
       st.devices.length ? el("dl", { class: "rows" }, ...rows) : el("p", { class: "muted", text: "No phones paired yet." }),

@@ -91,6 +91,11 @@ test("a paired phone runs a recipe on this computer and gets the file back, with
     const receipt = JSON.parse(fs.readFileSync(path.join(path.dirname(made.path), "receipt.json"), "utf8"))
     assert.deepEqual(receipt.askedBy, { phone: "Sam's phone" })
     assert.ok(s.phone.devices()[0].lastSeen)
+    // once the phone's run is over, what's run at the computer isn't shown to it
+    const next = events.length
+    s.phone.event({ type: "start", dir: "/x", planner: "claude", model: "m", apps: [] })
+    s.phone.event({ type: "say", text: "something asked at the computer" })
+    assert.deepEqual((await phone.call("progress", { since: next })).result.events, [])
   } finally { s.close() }
 })
 
@@ -139,13 +144,24 @@ test("what a phone may not do is refused: replays, wrong keys, old messages, oth
     assert.match((await phone.call("recipe", { id: "x" })).error, /isn't allowed to run recipes/)
     s.phone.allow(phone.id, { recipes: true, autopilot: false })
     assert.match((await phone.call("autopilot", { goal: "x" })).error, /isn't allowed to use Autopilot/)
-    // files: only ones runs made
+    // files: only ones this phone's own runs made
     const secret = path.join(s.h.root, "keys.json")
     fs.writeFileSync(secret, "{}")
-    assert.match((await phone.call("file", { path: secret })).error, /isn't something a run made/)
-    assert.match((await phone.call("file", { path: path.join(s.h.dir("autopilot"), "..", "keys.json") })).error, /isn't something a run made/)
+    assert.match((await phone.call("file", { path: secret })).error, /isn't something a run from this phone made/)
+    assert.match((await phone.call("file", { path: path.join(s.h.dir("autopilot"), "..", "keys.json") })).error, /isn't something a run from this phone made/)
     const up = (await phone.call("upload", { name: "a.txt", data: Buffer.from("x").toString("base64") })).result.upload
-    assert.match((await phone.call("file", { path: path.join(s.h.dir("autopilot"), "phone-inbox", phone.id, up) })).error, /isn't something a run made/)
+    assert.match((await phone.call("file", { path: path.join(s.h.dir("autopilot"), "phone-inbox", phone.id, up) })).error, /isn't something a run from this phone made/)
+    // a run started at the computer: its files aren't the phone's, and its events aren't shown to it
+    const desk = path.join(s.h.dir("autopilot"), "2026-desk-run")
+    fs.mkdirSync(desk, { recursive: true }); fs.writeFileSync(path.join(desk, "private.wav"), "x")
+    s.phone.event({ type: "start", dir: desk, planner: "claude", model: "m", apps: [] })
+    s.phone.event({ type: "file", file: path.join(desk, "private.wav"), app: "A" })
+    assert.deepEqual((await phone.call("progress", { since: 0 })).result.events, [])
+    assert.match((await phone.call("file", { path: path.join(desk, "private.wav") })).error, /isn't something a run from this phone made/)
+    // the phone's uploads are cleared after a day
+    const inboxFile = path.join(s.h.dir("autopilot"), "phone-inbox", phone.id, up)
+    s.phone.tidyInbox(Date.now() + 2 * 86400000)
+    assert.equal(fs.existsSync(inboxFile), false)
     assert.match((await phone.call("nope")).error, /doesn't know that request/)
     // removed: no longer opens
     s.phone.remove(phone.id)
