@@ -75,7 +75,7 @@ const keys = keysLib.create(home, crypt)
 const autopilot = autopilotLib.create({
   home, keys,
   // Autopilot's own events (step, file, done…) go to the window as one "autopilot" event
-  emit: (e) => toWindow({ type: "autopilot", event: e }),
+  emit: (e) => { toWindow({ type: "autopilot", event: e }); phone?.event(e) },
   apps: {
     list: () => apps.list(),
     dirOf: (id) => apps.appDir(id),
@@ -121,6 +121,9 @@ const autopilot = autopilotLib.create({
 })
 const asking = new Map()
 const recipes = recipesLib.create(home)
+// Phone access (lib/phone.js): a paired phone on the home network runs recipes and
+// Autopilot here; off until turned on in Home Server
+const phone = require("./lib/phone").create({ home, crypt, autopilot, recipes, version: app.getVersion(), log: (l) => home.log(l) })
 const account = accountLib.create(home, crypt)
 const icons = iconsLib.create(home.dir("cache"), (url, opts) => net.fetch(url, opts))
 
@@ -144,7 +147,7 @@ const updates = updatesLib.create(updater, {
   enabled: !!updater,
   log: (l) => home.log(l),
   emit: toWindow,
-  beforeInstall: () => { apps.stopAll(); sandbox.stopAll(); control.stop(); divina.stop() },
+  beforeInstall: () => { apps.stopAll(); sandbox.stopAll(); control.stop(); phone.stop(); divina.stop() },
 })
 
 const skills = skillsLib.create(path.join(__dirname, "skills"))
@@ -346,6 +349,15 @@ app.whenReady().then(() => shellPath).then(() => {
   })
   handle("mcp-disconnect", (id) => ({ ...connect.disconnect(String(id)), link: control.status().on }))
   handle("mcp-bridge", async () => { await runtimes.ensure("node"); connect.putBridge(); return { ...connect.status(), link: control.status().on } })
+  // Phone access (lib/phone.js)
+  handle("phone-status", () => phone.status())
+  handle("phone-set", async (on) => {
+    home.setPref("phoneAccess", !!on)
+    return on ? phone.start() : phone.stop()
+  })
+  handle("phone-pair", (name, can) => phone.pair(name, can && typeof can === "object" ? can : undefined))
+  handle("phone-remove", (id) => { home.log("phone access: removed a phone"); phone.remove(String(id)); return phone.status() })
+  handle("phone-allow", (id, can) => { phone.allow(String(id), can); return phone.status() })
   handle("prefs", () => home.prefs())
   handle("set-pref", (key, value) => home.setPref(key, value))
   handle("logs", () => home.listLogs())
@@ -690,6 +702,7 @@ app.whenReady().then(() => shellPath).then(() => {
     for (const a of apps.list()) if (a.installed && a.autostart && a.scripts.includes("start.js")) apps.run(a.id, "start.js").catch(() => {})
   })
   if (home.prefs().agentLink) control.start().catch((e) => home.log(`control link: ${e.message}`))
+  if (home.prefs().phoneAccess) phone.start().catch((e) => home.log(`phone access: ${e.message}`))
 })
 
 const BUILD_PROMPT = "Read OBSTAT_TASK.md in this folder and build the app it describes."
@@ -735,6 +748,6 @@ ${guide.trim()}
 `
 }
 
-app.on("before-quit", () => { apps.stopAll(); sandbox.stopAll(); control.stop(); divina.stop() })
+app.on("before-quit", () => { apps.stopAll(); sandbox.stopAll(); control.stop(); phone.stop(); divina.stop() })
 
 app.on("window-all-closed", () => app.quit())

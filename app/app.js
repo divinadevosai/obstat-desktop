@@ -817,13 +817,54 @@ const views = {
   },
 
   server: async () => {
-    const live = (await ask("apps")).filter((a) => a.running?.url)
-    return page("Home Server", "Open the apps running on this PC from your phone or another computer on your home network.",
-      el("dl", { class: "rows" },
-        el("div", {}, el("dt", { text: "Network access" }), el("dd", { text: "Off" })),
-        ...live.map((a) => el("div", {}, el("dt", { text: a.name }), el("dd", {}, el("button", { class: "link", text: a.running.url, onclick: () => go(runHash(a.id)) }))))),
-      !live.length && el("p", { class: "muted", text: "No apps are running. Start one from My apps and its address shows here." }),
-      soon("Sharing to your home network arrives next. It will stay off until you turn it on."))
+    // Phone access (lib/phone.js): a paired phone runs recipes and Autopilot here
+    const st = await ask("phoneStatus")
+    const note = el("p", { class: "note", role: "status" })
+    const when = (t) => (t ? new Date(t).toLocaleString() : "never")
+    const pairBox = el("div", {})
+    const name = el("input", { type: "text", placeholder: "Its name, e.g. Sam's phone", "aria-label": "Phone's name", maxlength: "40" })
+    const pairBtn = el("button", { class: "btn small", text: "Pair a phone", disabled: !st.on, onclick: async () => {
+      pairBtn.disabled = true; note.textContent = ""
+      try {
+        const r = await ask("phonePair", name.value, { recipes: true, autopilot: true })
+        pairBox.replaceChildren(el("div", { class: "pilot pair" },
+          el("h3", { text: `Scan this with ${r.device.name}` }),
+          el("img", { class: "qr", src: r.qr, alt: "Pairing code", width: "240", height: "240" }),
+          el("p", { class: "note", text: "Point the phone's camera at the code and open the link. It works while the phone is on the same Wi-Fi as this computer (or on your own Tailscale)." }),
+          el("p", { class: "note", text: "The code holds this phone's own key, so treat it like a password: don't share a screenshot of it." }),
+          ...r.links.slice(1).map((l) => el("p", { class: "note", text: `On ${l.kind === "tailscale" ? "Tailscale" : l.name}: ${l.url.replace(/#.*/, "")} (pair with the code above)` })),
+          el("div", { class: "row-btns" }, el("button", { class: "btn small", text: "Done", onclick: () => render() }))))
+      } catch (err) { note.textContent = err.message; pairBtn.disabled = false }
+    } })
+    const rows = st.devices.map((d) => {
+      const box = (label, key) => {
+        const c = el("input", { type: "checkbox", checked: !!d.can[key], "aria-label": `${d.name}: ${label}` })
+        c.onchange = async () => { await ask("phoneAllow", d.id, { ...d.can, [key]: c.checked }); render() }
+        return el("label", { class: "check" }, c, ` ${label}`)
+      }
+      return el("div", {},
+        el("dt", {}, d.name, el("small", { text: `Paired ${when(d.createdAt)}. Last used ${when(d.lastSeen)}.` }), el("span", { class: "row-btns" }, box("Run recipes", "recipes"), box("Use Autopilot", "autopilot"))),
+        el("dd", {}, el("button", { class: "btn small ghost", text: "Remove", onclick: async () => {
+          if (!confirm(`Remove ${d.name}? It won't be able to use Obstat until it's paired again.`)) return
+          await ask("phoneRemove", d.id); render()
+        } })))
+    })
+    return page("Home Server", "Use Obstat from your phone: run your recipes and Autopilot on this computer, and get the files back. The apps and the work stay here; the phone is a remote control.",
+      el("dl", { class: "rows" }, el("div", {},
+        el("dt", {}, "Let my phone use Obstat", el("small", { text: st.on
+          ? `On. Phones you've paired can reach this computer at ${st.addresses.map((a) => `${a.address}:${st.port}`).join(" or ") || "(no home network right now)"}. Nothing goes through Obstat's servers.`
+          : "Off. When it's on, only phones you pair can use it, and only from your home Wi-Fi (or your own Tailscale)." })),
+        el("dd", {}, toggle(st.on, async (v) => { const r = await ask("phoneSet", v); render(); return r.on })))),
+      el("div", { class: "section-h" }, el("h2", { text: `Paired phones · ${st.devices.length}` })),
+      st.devices.length ? el("dl", { class: "rows" }, ...rows) : el("p", { class: "muted", text: "No phones paired yet." }),
+      el("div", { class: "bar key-bar" }, name, pairBtn), note, pairBox,
+      el("div", { class: "section-h" }, el("h2", { text: "How it stays private" })),
+      el("ul", { class: "plain" },
+        el("li", { text: "Everything runs on this computer. The phone only asks for a recipe or an Autopilot job, and gets the files back." }),
+        el("li", { text: "Only devices on your own network can reach it: your home Wi-Fi, or your Tailscale or VPN. Nothing goes through an Obstat server." }),
+        el("li", { text: "Each phone has its own key, from the pairing code. Every request and every file is encrypted with it, so others on the Wi-Fi can't read or fake them." }),
+        el("li", { text: "Every run a phone starts gets a privacy receipt, which names the phone that asked." }),
+        el("li", { text: "One limit: the page the phone opens comes over your home network unencrypted, so a device that actively tampers with your network could change it. On a home network you trust, that's not a worry." })))
   },
 
   autolaunch: async () => {
@@ -1924,6 +1965,7 @@ let pilotLog = null
 function pilotLine(e) {
   const short = (v) => { const t = typeof v === "string" ? v : JSON.stringify(v); return t.length > 300 ? `${t.slice(0, 300)}…` : t }
   if (e.type === "start" && e.planner === "agent") return el("li", { class: "note" }, `An AI tool on this computer asked ${e.apps.join(", ")} to run ${e.model.replace("__", " · ")} (through the agent link).`)
+  if (e.type === "start" && e.via) return el("li", { class: "note" }, `${e.via} asked for ${e.planner === "recipe" ? `the recipe “${e.model}”` : "an Autopilot job"} (phone access).`)
   if (e.type === "start") return el("li", { class: "note" }, e.planner === "recipe" ? `Running the recipe “${e.model}” with ${e.apps.join(", ")}: no planner, the same steps as before.` : `Using ${e.planner === "claude" ? `Claude (${e.model})` : `${e.model} on this computer`} with ${e.apps.join(", ")}.`)
   if (e.type === "note") return el("li", { class: "note", text: e.text })
   if (e.type === "say") return el("li", {}, el("b", { text: "Plan " }), el("span", { text: short(e.text) }))
@@ -1962,7 +2004,7 @@ function receiptLine(e) {
   const away = r.network.connections
   const host = (c) => `${c.address.includes(":") ? `[${c.address}]` : c.address}:${c.port}`
   return el("li", { class: `receipt ${r.network.couldNotLook ? "" : away.length ? "err" : "ok-note"}` },
-    el("b", { text: "Receipt " }), el("span", { text: r.summary }),
+    el("b", { text: "Receipt " }), el("span", { text: r.summary }), r.askedBy?.phone && el("small", { text: ` Asked from ${r.askedBy.phone}.` }),
     el("ul", {},
       el("li", { text: `Planning: ${r.planner.sent}${r.planner.kind === "claude" ? ` Sent to ${r.planner.sentTo}.` : ""}` }),
       el("li", { text: `Apps: ${r.apps.length ? r.apps.map((a) => `${a.name}${a.commit ? ` @ ${String(a.commit).slice(0, 7)}` : ""}`).join(", ") : "none ran"}` }),

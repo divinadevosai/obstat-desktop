@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14122a">
+  <meta name="referrer" content="no-referrer">
+  <title>Obstat</title>
+  <style>
+    :root { --bg: #14122a; --panel: #1f1c3a; --panel2: #29254a; --line: rgba(255,255,255,.12); --text: #f2f0fb; --dim: #b5b0cf; --acc: #8f87ff; --ok: #5fd6a0; --err: #ff7b86; color-scheme: dark; }
+    @media (prefers-color-scheme: light) { :root { --bg: #eef2fa; --panel: #ffffff; --panel2: #f3f5fb; --line: rgba(20,33,58,.12); --text: #14213a; --dim: #4a5876; --acc: #5b57e0; --ok: #12805a; --err: #c42b3a; color-scheme: light; } }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+    main { max-width: 560px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom)); }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 0 16px; }
+    h1 { font-size: 22px; margin: 0; }
+    h2 { font-size: 17px; margin: 0 0 8px; }
+    .status { color: var(--dim); font-size: 14px; text-align: right; }
+    .status.ok::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin: 0 0 14px; }
+    p { margin: 0 0 10px; }
+    .dim { color: var(--dim); font-size: 14px; }
+    .err { color: var(--err); }
+    textarea, input[type=text] { width: 100%; font: inherit; color: inherit; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+    textarea { min-height: 88px; resize: vertical; }
+    label { display: block; margin: 10px 0 6px; font-size: 14px; color: var(--dim); }
+    input[type=file] { width: 100%; font-size: 14px; color: var(--dim); }
+    button { font: inherit; border: 0; border-radius: 999px; padding: 12px 18px; min-height: 44px; background: var(--acc); color: #fff; font-weight: 600; touch-action: manipulation; }
+    button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+    button:disabled { opacity: .5; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .recipe { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+    .recipe:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+    .recipe h3 { font-size: 16px; margin: 0 0 4px; }
+    ol.log { list-style: none; margin: 0; padding: 0; }
+    ol.log li { padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+    ol.log li:first-child { border-top: 0; }
+    ol.log li.err { color: var(--err); }
+    ol.log li.done { color: var(--ok); }
+    .result img, .result video { max-width: 100%; border-radius: 12px; margin-top: 8px; }
+    .result audio { width: 100%; margin-top: 8px; }
+    .result a { color: var(--acc); }
+    footer { color: var(--dim); font-size: 13px; margin-top: 18px; }
+  </style>
+  <script src="nacl.js" defer></script>
+  <script src="phone.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Obstat</h1>
+      <span class="status" id="status" role="status">Connecting…</span>
+    </header>
+    <div id="app"></div>
+    <footer>Everything runs on your computer. This phone only asks it to, over your own network, and every message is encrypted with this phone's key.</footer>
+  </main>
+</body>
+</html>
