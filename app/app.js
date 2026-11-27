@@ -2326,8 +2326,9 @@ function barItems(q) {
     if (!s) continue
     if (a.running?.url) out.push({ s: s + 5, kind: "Open", label: a.name, note: "running", run: () => go(runHash(a.id)) })
     else if (a.installed) {
-      out.push({ s: s + 4, kind: "Start", label: a.name, run: () => { const [owner, name] = a.id.split("/"); startQueued = a.id; go(appHash({ owner, name })) } })
-      out.push({ s: s - 1, kind: "App", label: a.name, note: "its page", run: () => { const [owner, name] = a.id.split("/"); go(appHash({ owner, name })) } })
+      // one that's busy (installing, updating) can't be started now: just its page
+      if (!a.running) out.push({ s: s + 4, kind: "Start", label: a.name, run: () => { const [owner, name] = a.id.split("/"); startQueued = a.id; go(appHash({ owner, name })) } })
+      out.push({ s: a.running ? s + 4 : s - 1, kind: "App", label: a.name, note: a.running ? `busy: ${a.running.script.replace(/\.js$/, "")}` : "its page", run: () => { const [owner, name] = a.id.split("/"); go(appHash({ owner, name })) } })
     }
   }
   for (const r of d.recipes) {
