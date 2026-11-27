@@ -329,6 +329,8 @@ const views = {
     const fail = (err) => { note.replaceChildren(); appendLog(id, `\n${err.message}\n`); busy(false) }
     // a start that stopped on the app's own tab: its doctor shows here
     if (pendingDoctor?.id === id) { const d = pendingDoctor; pendingDoctor = null; doctorNote(d.script, d.error, () => start(d.script)) }
+    // "Start" from the command bar
+    if (startQueued === id) { startQueued = null; if (local?.installed && !local.running) setTimeout(() => start(), 0) }
 
     async function install(_ev, kept = false) {
       if (!isReviewed && !kept && !mine && !confirm("Nobody has reviewed this repo. Its install steps will run on your PC with your permissions. You'll see its commands first; a few details, like ports, are filled in as they run. Continue?")) return
@@ -2042,6 +2044,13 @@ async function autopilotView() {
   } })
   const stop = el("button", { class: "btn small ghost", text: "Stop", hidden: !pilot.running, onclick: () => ask("autopilotStop") })
   pilotLog = el("ol", { class: "timeline pilot-log" }, ...pilot.events.map(pilotLine).filter(Boolean))
+  // asked from the command bar: in the box, and started when Autopilot can plan
+  if (pilotQueued) {
+    goal.value = pilotQueued.goal
+    pilotQueued = null
+    if (!go.disabled) setTimeout(() => go.click(), 0)
+    else status.textContent = st.planner ? "Autopilot is busy or has no apps yet; press Do it when it's ready." : "Set up a planner below, then press Do it."
+  }
 
   // how it plans: Claude with the user's key, or a local model through Ollama
   const key = el("input", { type: "password", placeholder: "Anthropic API key (sk-ant-…)", "aria-label": "Anthropic API key", autocomplete: "off" })
@@ -2112,7 +2121,9 @@ function recipeCard(r) {
     input.oninput = () => { values[`${i}.${k}`] = input.value }
     fields.push(el("label", { class: "recipe-field" }, el("small", { text: `${s.appName} · ${v.label || "text"}` }), input))
   }))
-  return el("div", { class: "pilot recipe" },
+  // picked in the command bar: shown and lit up
+  if (pilotFocus === r.id) { pilotFocus = null; setTimeout(() => { const c = document.getElementById(`recipe-${r.id}`); c?.scrollIntoView({ block: "center" }); c?.classList.add("lit") }, 50) }
+  return el("div", { class: "pilot recipe", id: `recipe-${r.id}` },
     el("h3", { text: r.name }),
     r.imported ? el("div", { class: "note err" }, el("b", { text: "From someone else. " }), "Check what it does before you run it:", el("ol", {}, ...steps.map((t) => el("li", { text: t.replace(/^\d+\. /, "") })))) : null,
     el("p", { class: "note", text: `${chain}${r.about && r.about !== r.name ? `. Made from: “${r.about.slice(0, 160)}”` : ""}` }),
@@ -2318,11 +2329,130 @@ document.addEventListener("click", (e) => {
   window.obstat.openExternal(a.href)
 })
 
-// one box for both: a GitHub link opens it, anything else searches Discover
+// ---------- the command bar: Ctrl/Cmd+K ----------
+// The box at the top finds your apps, recipes and pages as you type, and does the job:
+// start an app, run a recipe, or hand what you typed to Autopilot. A GitHub link still
+// opens it, and anything else can still search Discover.
+const PAGES = [
+  ["My apps", "#/apps", "apps installed"], ["Discover", "#/discover", "find new apps reviewed"], ["Create", "#/create", "new app build ui"],
+  ["Autopilot", "#/autopilot", "recipes chain"], ["Insights", "#/insights", "usage disk receipts"], ["Community", "#/hub", "hub chat discussions launches"],
+  ["Tools", "#/tools", ""], ["Skills and AI tools", "#/skills", "mcp claude cursor connect agents"], ["Home Server", "#/server", "phone remote"],
+  ["Plugins", "#/plugins", "editor vs code cursor terminal"], ["Logs", "#/logs", ""], ["Disk", "#/disk", "space storage"], ["Keys", "#/settings", "api key token hugging face openai"],
+  ["Settings", "#/settings", "preferences"], ["Updates", "#/updates", ""], ["Help", "#/help", ""],
+]
+// how well `q` matches `text`: 0 is no match; a start of a word beats the middle of one
+function score(q, text) {
+  const t = String(text || "").toLowerCase(), w = q.toLowerCase()
+  if (!w) return 1
+  if (t.startsWith(w)) return 100
+  if (new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(t)) return 60
+  if (t.includes(w)) return 30
+  // every word of what was typed somewhere in it
+  const parts = w.split(/\s+/).filter(Boolean)
+  return parts.length > 1 && parts.every((p) => t.includes(p)) ? 20 : 0
+}
+// "Do it" on the Autopilot page, for a request typed in the bar
+let pilotQueued = null
+const bar = { open: false, items: [], at: 0, data: null }
+async function barData() {
+  const [apps, recipes] = await Promise.all([ask("apps").catch(() => []), ask("recipesList").catch(() => [])])
+  return { apps, recipes }
+}
+function barItems(q) {
+  const d = bar.data || { apps: [], recipes: [] }
+  const out = []
+  const link = /github\.com\/|^[\w.-]+\/[\w.-]+$/i.test(q)
+  if (link) out.push({ s: 1000, kind: "Add", label: `Open ${q}`, run: () => go(`#/add/${encodeURIComponent(q)}`) })
+  for (const a of d.apps) {
+    const s = Math.max(score(q, a.name), score(q, a.id) - 5, score(q, a.description) / 3)
+    if (!s) continue
+    if (a.running?.url) out.push({ s: s + 5, kind: "Open", label: a.name, note: "running", run: () => go(runHash(a.id)) })
+    else if (a.installed) {
+      // one that's busy (installing, updating) can't be started now: just its page
+      if (!a.running) out.push({ s: s + 4, kind: "Start", label: a.name, run: () => { const [owner, name] = a.id.split("/"); startQueued = a.id; go(appHash({ owner, name })) } })
+      out.push({ s: a.running ? s + 4 : s - 1, kind: "App", label: a.name, note: a.running ? `busy: ${a.running.script.replace(/\.js$/, "")}` : "its page", run: () => { const [owner, name] = a.id.split("/"); go(appHash({ owner, name })) } })
+    }
+  }
+  for (const r of d.recipes) {
+    const s = Math.max(score(q, r.name), score(q, r.about) / 2)
+    if (!s) continue
+    const needs = r.files.length ? `needs ${r.files.map((f) => f.label).join(", ")}` : r.imported ? "from someone else: look first" : "runs now"
+    out.push({ s: s + 3, kind: "Recipe", label: r.name, note: needs, run: () => runRecipeFromBar(r) })
+  }
+  for (const r of repos || []) {
+    if (d.apps.some((a) => a.id === r.id.toLowerCase() && a.installed)) continue
+    const s = Math.max(score(q, r.name), score(q, r.description) / 3)
+    if (s) out.push({ s: s - 2, kind: "Get", label: r.name, note: "reviewed app", run: () => go(appHash(r)) })
+  }
+  for (const [name, hash, words] of PAGES) {
+    const s = Math.max(score(q, name), score(q, words) / 2)
+    if (s) out.push({ s: s - 3, kind: "Go to", label: name, run: () => go(hash) })
+  }
+  out.sort((a, b) => b.s - a.s)
+  const top = out.slice(0, 7)
+  // what you typed, as a job: Autopilot, and Discover
+  if (q.length > 2 && !link) {
+    top.push({ s: 0, kind: "Autopilot", label: q, note: "do it with your apps", run: () => { pilotQueued = { goal: q }; if (location.hash === "#/autopilot") render(); else go("#/autopilot") } })
+    top.push({ s: 0, kind: "Discover", label: `Search for “${q}”`, run: () => go(`#/discover/${encodeURIComponent(q)}`) })
+  }
+  return top
+}
+async function runRecipeFromBar(r) {
+  // one that needs files, or came from someone else, opens where it can be set up and looked at
+  if (r.files.length || r.imported) { pilotFocus = r.id; return go("#/autopilot") }
+  pilot.running = true; pilot.events = []
+  go("#/autopilot")
+  try { await ask("recipeRun", r.id, [], {}, false) } catch (err) { pilot.running = false; pilotEvent({ type: "error", text: err.message }) }
+}
+let startQueued = null, pilotFocus = null
+const barList = el("ul", { class: "bar-list", id: "bar-list", role: "listbox", hidden: true })
+$("search").append(barList)
+function barShow() {
+  const q = $("q").value.trim()
+  bar.items = q ? barItems(q) : []
+  bar.at = 0
+  barList.hidden = !bar.items.length
+  $("q").setAttribute("aria-expanded", String(!barList.hidden))
+  barList.replaceChildren(...bar.items.map((it, i) => el("li", { role: "option", id: `bar-${i}`, class: i === bar.at ? "on" : "", "aria-selected": String(i === bar.at),
+    onmousedown: (e) => { e.preventDefault(); barPick(i) }, onmousemove: () => barMove(i) },
+  el("span", { class: `bar-kind k-${it.kind.toLowerCase().replace(/\s+/g, "")}`, text: it.kind }), el("span", { class: "bar-label", text: it.label }), it.note && el("small", { text: it.note }))))
+  if (!barList.hidden) $("q").setAttribute("aria-activedescendant", "bar-0")
+}
+function barMove(i) {
+  if (!bar.items.length) return
+  bar.at = (i + bar.items.length) % bar.items.length
+  for (const [k, li] of [...barList.children].entries()) { li.classList.toggle("on", k === bar.at); li.setAttribute("aria-selected", String(k === bar.at)) }
+  $("q").setAttribute("aria-activedescendant", `bar-${bar.at}`)
+  barList.children[bar.at]?.scrollIntoView({ block: "nearest" })
+}
+function barClose() { barList.hidden = true; $("q").setAttribute("aria-expanded", "false") }
+function barPick(i) {
+  const it = bar.items[i]
+  if (!it) return
+  $("q").value = ""; barClose(); $("q").blur()
+  it.run()
+}
+$("q").setAttribute("role", "combobox")
+$("q").setAttribute("aria-controls", "bar-list")
+$("q").setAttribute("aria-expanded", "false")
+$("q").placeholder = `Search or ask anything  (${/Mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}K)`
+$("q").addEventListener("focus", async () => { bar.data = await barData(); barShow() })
+$("q").addEventListener("input", barShow)
+$("q").addEventListener("blur", () => setTimeout(barClose, 120))
+$("q").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") { e.preventDefault(); barMove(bar.at + 1) }
+  else if (e.key === "ArrowUp") { e.preventDefault(); barMove(bar.at - 1) }
+  else if (e.key === "Escape") { $("q").value = ""; barClose(); $("q").blur() }
+})
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); $("q").focus(); $("q").select() }
+})
+// Enter: the highlighted one (with nothing listed, the old way: a link opens, the rest searches Discover)
 $("search").addEventListener("submit", (e) => {
   e.preventDefault()
   const q = $("q").value.trim()
   if (!q) return
+  if (bar.items.length && !barList.hidden) return barPick(bar.at)
   $("q").value = ""
   go(/github\.com\/|^[\w.-]+\/[\w.-]+$/i.test(q) ? `#/add/${encodeURIComponent(q)}` : `#/discover/${encodeURIComponent(q)}`)
 })
